@@ -1,0 +1,696 @@
+---
+title: "Showcase - dummy"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(recommenderlab)
+library(tidyverse)
+```
+
+
+# LOAD DATA
+
+```{r}
+load("./Showcase - dummy.RData")
+```
+
+
+# MSWEB DATA
+
+```{r}
+data("MSWeb")
+data("MovieLense")
+data("Jester5k")
+```
+
+Showcase using dummy data.
+
+```{r eval=FALSE, include=FALSE}
+class(MSWeb)
+class(MovieLense)
+class(Jester5k)
+```
+Data needs to be in a matrix format:
+* realRatingMatrix - where product ratings (e.g., 1-5) are provided
+* binaryRatingMatrix - where we only have information that a customer bought or didn't buy a product (binary)
+
+We will use MSWeb data.
+
+```{r}
+dim(MSWeb)
+```
+```{r}
+rownames(MSWeb)[1:10] #user ids
+colnames(MSWeb)[1:10] #product names
+```
+## Product name <=> business line
+
+```{r}
+set.seed(123)
+prod_biz_map <- 
+tibble(item = colnames(MSWeb)) %>% 
+    mutate(business = sample(x = c("life","non-life","health","asset","banking"),
+                           size = nrow(.),
+                           replace = TRUE,
+                           prob = c(0.1,0.2,0.4,0.15,0.15)))
+
+head(prod_biz_map)
+```
+
+
+Can our purchase information contain duplicates i.e. multiple purchases of the same product?
+
+1. While these datasets do not contain duplicates, time series data will likely contain duplicates and in such as case it might be fine.
+2. We might need to remove duplicates to reduce the chances of the recommenders proposing the same recommendations.
+
+```{r}
+ms_purchases <- as(MSWeb, "list") %>% 
+  tibble(user_id = names(.)) %>% 
+  unnest(cols = ".") %>% 
+  rename(purchase = ".") %>% 
+  count(user_id,purchase)
+```
+
+
+```{r}
+ms_purchases %>% 
+  filter(n>1)
+```
+
+
+```{r}
+as(MovieLense,"list") %>% 
+  tibble() %>% 
+  rename(ratings = ".") %>% 
+  mutate(len = map_int(.x = ratings, .f = length),
+         idx = row_number()) %>% 
+  arrange(desc(len))
+```
+
+```{r}
+as(MovieLense,"list")[[405]] %>% 
+  data.frame() %>% 
+  rownames_to_column() %>% 
+  count(rowname) %>% 
+  arrange(desc(n))
+```
+
+## SIMPLE STATS
+
+## Summary info
+
+The first step is to determine a filtering criteria.
+
+```{r}
+summary(rowCounts(MSWeb))
+```
+
+## Histogram
+
+```{r}
+which(grepl(x = rownames(MSWeb), pattern = "^1$"))
+
+as(MSWeb[1:2,], "list")
+
+hist(rowCounts(MSWeb))
+```
+
+## Minimum cut-off
+
+Importance since without it, LOOCV will not work where some items have only 1 purchase.
+The table below is a summary of the number of purchase decisions. What it tells us is that 9994 people made only a single purchase, etc.
+
+```{r}
+table(rowCounts(MSWeb)) %>% 
+  data.frame()
+```
+A cut-off of >10 means that we'll retain 875 records or 2% of the data.
+
+```{r}
+table(rowCounts(MSWeb)) %>% 
+  data.frame() %>% 
+  mutate(total_purchases = sum(Freq)) %>% 
+  mutate(Var1 = as.integer(Var1)) %>% 
+  filter(Var1>=10) %>% 
+  mutate(purchases_10 = sum(Freq)) %>% 
+  summarise(purchases_10 = mean(purchases_10),
+            total_purchases = mean(total_purchases)) %>% 
+  mutate(prop = purchases_10/total_purchases)
+```
+
+```{r}
+MSWeb10 <- MSWeb[rowCounts(MSWeb)>=10,]
+
+dim(MSWeb10)
+```
+
+```{r}
+summary(rowCounts(MSWeb10))
+```
+
+# UAP DUMMY DATA
+
+Import the following:
+1. Mapping of a product name to its line of business
+2. Dummy product purchases
+
+
+```{r}
+uap_products <- readRDS("./uap_products.rds")
+uap_dummy_data <- readRDS("./uap_dummy_data_rating_matrix.rds")
+```
+
+
+```{r}
+colnames(uap_dummy_data)[1:10]
+rownames(uap_dummy_data)[1:10]
+```
+
+
+# CROSS-VALIDATED TRAINING
+
+## Evaluation scheme
+
+```{r}
+es <- 
+evaluationScheme(data = uap_dummy_data, 
+                 method = "cross-validation",
+                 train = 0.8,
+                 k = 5,
+                 given = -1)
+```
+
+
+## List of recommenders
+
+In practice it is better to exclude the Hybrid Recommender and instead define it after examining the evaluation results.
+
+```{r}
+algorithms <- list(
+  popular = list(name = "POPULAR", param = NULL),
+  ubcf = list(name = "UBCF", param = NULL),
+  ibcf = list(name = "IBCF", param = NULL),
+  ar = list(name = "AR", param = list(confidence = 0.7))
+  # hybrid = list(name = "HYBRID", param =
+  #     list(recommenders = list(
+  #         popular = list(name = "POPULAR", param = NULL),
+  #         ubcf = list(name = "UBCF", param = NULL),
+  #         ibcf = list(name = "IBCF", param = NULL)
+  #       )
+  #     )
+  # )
+)
+```
+
+## Cross-validated Training
+
+```{r}
+system.time({
+  
+ev_list <- 
+evaluate(x = es,
+         method = algorithms,
+         type = "topNList",
+         n = c(1,3,5,10))
+
+})
+```
+## RO Curves
+
+```{r}
+names(ev_list)
+```
+
+```{r}
+plot(ev_list, legend="topleft", annotate=TRUE, main="ROC Curves of each model")
+
+plot(ev_list[[1]], annotate=TRUE, main="ROC Curve of Popularity Model")
+```
+
+## PR Curves
+
+You can determine the operating point to select the most accurate threshold. For instance in this cross-selling model, predicting 5 items is the most suitable approach.
+
+```{r}
+plot(x = ev_list, y = "prec/rec", annotate=TRUE, legend="topleft")
+```
+## Area Under Curve
+
+Ref: https://stackoverflow.com/questions/4954507/calculate-the-area-under-a-curve
+
+```{r}
+names(ev_list)
+
+ibcf_eval <- avg(ev_list$ibcf) %>% 
+  data.frame() %>% 
+  arrange(recall)
+
+pop_eval <- avg(ev_list$popular) %>% 
+  data.frame() %>% 
+  arrange(recall)
+
+pracma::trapz(x = ibcf_eval$recall, y = ibcf_eval$precision)
+pracma::trapz(x = pop_eval$recall, y = pop_eval$precision)
+```
+
+# TRAIN RECOMMENDERS
+
+From the results, we can see that the top performing recommender models are ubcf and popular.
+
+```{r}
+ke_ubcf = Recommender(data = uap_dummy_data, method = "UBCF")
+ke_pop = Recommender(data = uap_dummy_data, method = "POPULAR")
+#ke_hyb = HybridRecommender(ke_ubcf, ke_pop)
+```
+
+# PREDICTIONS
+
+## Raw predictions
+
+```{r}
+pre = predict(ke_pop, uap_dummy_data[100:101], n=10)
+# We can also use 5 because we saw it is the best threshold
+
+rownames(uap_dummy_data[100:101])
+
+pre = as(pre, "list")
+
+pre
+```
+
+## SCENARIO 1: Select specific customer ids
+
+```{r}
+req_user_id <- c(1331,13328)
+
+#rec_user_id <- c("^3097$","^3164$")
+
+records <- c()
+for(id in seq_along(req_user_id)){
+  records <- append(records,paste0("^",req_user_id,"$"))
+}
+
+records <- unique(records)
+
+rec_nums <- which(grepl(x = rownames(uap_dummy_data),
+            pattern = paste0(records, collapse = "|")))
+
+pre_flex <- predict(object = ke_pop, 
+                    newdata = uap_dummy_data[rec_nums], 
+                    n=10)
+
+as(pre_flex, "list")
+```
+## Format into a data frame
+
+```{r}
+as(pre_flex,"list") %>% 
+  data.frame() %>% 
+  unnest() %>% 
+  pivot_longer(cols = everything()) %>% 
+  mutate(customer_no = str_remove(name,"^X")) %>% 
+  arrange(customer_no)
+```
+
+## Extracting ratings
+
+```{r}
+pred_ratings <- predict(ke_pop, uap_dummy_data[rec_nums], type="ratings")
+
+pred_ratings_list <- as(pred_ratings,"list")
+
+item_name_vec <- c()
+for(user in seq_along(pred_ratings_list)){
+  item_names <- names(pred_ratings_list[[user]])
+  item_name_vec <- append(item_name_vec, item_names)
+}
+
+preds_all <- pred_ratings_list %>% 
+  tibble(user_id = names(.)) %>% 
+  unnest(cols = ".") %>% 
+  mutate(item = item_name_vec) %>% 
+  rename(score = ".") %>% 
+  left_join(uap_products, by = c("item"="product"))
+
+preds_all
+```
+
+```{r}
+preds_by_business <- preds_all %>% 
+  group_by(user_id, business_line) %>% 
+  arrange(desc(score), .by_group = TRUE) %>% 
+  slice(1:3) %>% 
+  ungroup()
+
+preds_by_business
+```
+
+```{r}
+top_5 <- preds_all %>% 
+  group_by(user_id) %>% 
+  arrange(desc(score), .by_group = TRUE) %>% 
+  slice(1:5)
+
+top_5
+```
+
+## SCENARIO 2: Recommend a list of customers most likely to purchase a product
+
+Get recommendations of all users and sort by those most likely to purchase.
+
+This will only need to be run once in a while and not on every run - so as to update the model with new user ids. We should also save all the customer product recommendations in a table and be running queries only.
+
+```{r}
+all_customer_recommendations <-
+  predict(object = ke_ubcf, newdata = uap_dummy_data, type="ratings")
+
+dim(all_customer_recommendations)
+
+all_recs_list <- as(all_customer_recommendations,"list")
+```
+Create a vector of products per user.
+
+```{r}
+item_name_vec_all <- c()
+for(user in seq_along(all_recs_list)){
+  user_items <- names(all_recs_list[[user]])
+  item_name_vec_all <- append(item_name_vec_all, user_items)
+}
+```
+
+
+```{r}
+all_cust_recs_df <- 
+  as(all_customer_recommendations,"list") %>% 
+    tibble(user_id = names(.)) %>% 
+    unnest(.) %>% 
+    rename(score = ".") %>% 
+    mutate(item = item_name_vec_all) %>% 
+    left_join(uap_products, by=c("item"="product")) %>% 
+    select(user_id, item, business_line, score)
+
+head(all_cust_recs_df)
+```
+Identifying the customers who are most likely to make a purchase:
+
+Options:
+* Average score of the top 3 best products overall (There's a chance that the user might get recommendations from the same business line)
+
+* Average of the top 3 in each business line (might have a less score but there will be diversity of recommendation. We might consider max score. In this case it will be the likely hood of purchasing at least one. Alternatively, we can just user simple average)
+
+### Option 1
+
+```{r}
+all_cust_recs_df %>% 
+  group_by(user_id) %>%
+  slice(1:5) %>% 
+  mutate(avg_score = mean(score)) %>% 
+  arrange(desc(avg_score))
+```
+
+### Option 2 (preferred)
+
+Max of the top 3 products from all business lines.
+
+```{r}
+all_cust_recs_df %>% 
+  group_by(user_id, business_line) %>% 
+  arrange(desc(score)) %>% 
+  slice(1:3) %>% 
+  ungroup() %>% 
+  group_by(user_id) %>% 
+  mutate(avg = mean(score),
+         max_score = max(score),
+         geom_avg = mean(exp(log(score + 1)))-1) %>% 
+  ungroup() %>% 
+  group_by(user_id, max_score) %>% 
+  arrange(desc(max_score)) %>% 
+  ungroup()
+```
+
+
+
+## SCENARIO 3: Recommend on the basis of already chosen products
+
+Provide product recommendations on the basis of what a customer has chosen.
+
+A customer has made the following choices:
+* 5 products
+* A single product
+
+
+Capture user selections.
+
+```{r}
+user_choices <- c("Group Personal Accident",
+                  "Critical Illness Cover",
+                  "Comprehensive Commercial",
+                  "Old Mutual Bond Fund",
+                  "Corporate Health Insurance")
+```
+
+Identify missing product names
+
+```{r}
+not_user_choices <- colnames(uap_dummy_data)[!colnames(uap_dummy_data) %in% user_choices]
+
+length(not_user_choices)
+```
+
+Convert to dataframe.
+
+```{r}
+choices <- tibble(choice = 
+rep(x = c(1,0), 
+    times = c(length(user_choices), 
+              length(not_user_choices))
+    ))
+
+user_choices_df <-
+choices %>% 
+  mutate(user_choices = c(user_choices, not_user_choices))
+
+head(user_choices_df)
+```
+
+
+```{r}
+user_choices_df <- 
+pivot_wider(data = user_choices_df,
+            names_from = user_choices, 
+            values_from = choice)
+
+head(user_choices_df)
+```
+
+
+Convert to binary rating matrix.
+
+```{r}
+user_choices_mat <- as.matrix(user_choices_df)
+
+colnames(user_choices_mat)[1:10]
+
+user_choices_ratmat <- as(user_choices_mat,"binaryRatingMatrix")
+
+class(user_choices_ratmat)
+```
+
+Compare with MSWeb10 data
+
+```{r eval=FALSE, include=FALSE}
+class(MSWeb10[100:101])
+class(user_choices_ratmat)
+
+colnames(MSWeb10[100:101])[1:10]
+colnames(user_choices_ratmat)[1:10]
+
+length(colnames(MSWeb10))
+length(colnames(user_choices_ratmat))
+```
+
+Recommend products.
+
+```{r}
+pre_opt3 <- predict(object = ke_ubcf, 
+                    newdata = user_choices_ratmat, 
+                    type="ratings")
+
+as(pre_opt3, "list") %>% 
+  data.frame() %>% 
+  rename(score = X1) %>% 
+  rownames_to_column("item") %>% 
+  left_join(uap_products, by = c("item"="product")) %>% 
+  arrange(desc(score))
+```
+
+
+# HYBRID RECOMMENDER
+
+Random search hyper-parameter optimisation.
+
+## Sample 5 different combinations of weights
+
+```{r}
+rec_weights <-
+  crossing(m1 = seq(0,1,0.1),
+           m2 = seq(0,1,0.1)) %>% 
+  filter(m1 + m2 == 1, 
+         !m1 %in% 1,
+         !m2 %in% 1) %>% 
+  mutate(weights = paste0(m1,",",m2)) %>% 
+  pull(weights)
+
+set.seed(123)
+rec_weights_sample <- sample(rec_weights, 5)
+
+
+rec_weights_sample
+```
+
+
+```{r}
+recommenderRegistry$get_entry_names()
+```
+## Test with some weights
+
+```{r}
+hybrids <- 
+list(hybrid = list(name = "HYBRID", 
+                   param = list(recommenders = list(popular = list(name = "POPULAR", 
+                                                                   param = NULL),
+                                                    ubcf = list(name = "UBCF", 
+                                                                param = NULL)),
+                                weights = c(0.2,0.8))))
+```
+
+
+## List of hybrids with different weights
+
+This list should contain different weights as a numeric vector.
+
+```{r}
+hybrids_list <- list()
+for (w in seq_along(rec_weights_sample)){
+hybrids_list[[w]] <- list(hybrid = list(name = "HYBRID", 
+                   param = list(recommenders = list(popular = list(name = "POPULAR", 
+                                                                   param = NULL),
+                                                    ubcf = list(name = "UBCF", 
+                                                                param = NULL)),
+                                weights = as.numeric(strsplit(rec_weights_sample[[w]],",")[[1]])
+                                )))
+  
+}
+```
+
+
+## Training
+
+We expect to see 5 different hybrid models.
+
+```{r}
+ev_hybrid <- list()
+for(h in seq_along(hybrids_list)){
+  ev_hybrid[[h]] <- evaluate(es, hybrids_list[[h]], n = c(1,3,5,10))
+}
+```
+
+## Plot results
+
+```{r}
+class(ev_hybrid)
+
+class(ev_hybrid[[1]])
+```
+
+```{r}
+for(p in seq_along(ev_hybrid)){
+  plot(x = ev_hybrid[[p]], 
+       y = "prec/rec", 
+       annotate = TRUE,
+       main = print(rec_weights_sample[p]))
+}
+```
+
+## AUC
+
+```{r}
+hybrid_3 <- avg(ev_hybrid[[3]]) %>% 
+  data.frame() %>% 
+  arrange(hybrid.recall)
+
+hybrid_5 <- avg(ev_hybrid[[5]]) %>% 
+  data.frame() %>% 
+  arrange(hybrid.recall)
+
+pracma::trapz(x = hybrid_3$hybrid.recall, y = hybrid_3$hybrid.precision)
+pracma::trapz(x = hybrid_5$hybrid.recall, y = hybrid_5$hybrid.precision)
+```
+
+
+## Sense check
+
+```{r}
+# Check hybrid 01
+test_ev <- evaluate(es, hybrids, n = c(1,3,5,10))
+
+plot(test_ev, y = "prec/rec")
+```
+
+# SCENARIO 4: COLD START
+
+Recommending products to new users.
+
+## Popularity recommender
+
+Pick two customers from the same business line and see if the model will recommend the same popular products.
+
+```{r}
+preds_all %>% 
+  group_by(business,user_id) %>% 
+  sample_n(size = 1, .by_group=TRUE)
+```
+
+```{r}
+which(grepl(x = rownames(MSWeb10), pattern = "^3097$|^3164$"))
+
+as(predict(object = ke_pop, newdata = MSWeb10[100:101]),"list")
+```
+
+## Popular products (preferred)
+
+Determine popular products from summary statistics. This will likely have better business acceptance. Limit to most popular in the last one year.
+
+```{r}
+as(uap_dummy_data,"data.frame") %>% 
+  count(item) %>% 
+  left_join(uap_products, by = c("item"="product")) %>% 
+  select(business_line,item,n) %>% 
+  arrange(desc(n)) %>% 
+  filter(!is.na(business_line)) %>% 
+  group_by(business_line) %>% 
+  slice(1:3) %>% 
+  rename(products_bought = n) %>% 
+  ungroup()
+```
+
+# EXPORT DATA
+
+```{r}
+save.image("./Showcase - dummy.RData")
+```
+
+```{r}
+writexl::write_xlsx(list(by_business = preds_by_business,
+                         top_5 = top_5),
+                    "./pred_list_score.xlsx")
+```
+
+
+
