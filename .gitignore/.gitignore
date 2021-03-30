@@ -170,7 +170,7 @@ dmypy.json
 .pyre/
 
 # Data files
-.csv
-.xls*
-.ppt*
-.doc*
+*.csv
+*.xls*
+*.ppt*
+*.doc*
