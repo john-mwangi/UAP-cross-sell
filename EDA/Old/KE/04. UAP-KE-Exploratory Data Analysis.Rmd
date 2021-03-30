@@ -1,0 +1,147 @@
+---
+title: "Exploratory Data Analysis"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+```
+
+```{r}
+KE_Single_View_Consolidated <- readRDS("./KE_Single_View_Consolidated.rds")
+```
+
+
+# SUMMARY STATISTICS
+
+We want a table containing: column name, number of unique values, number of null values, mean, median, maximum, minimum, standard deviation
+
+```{r}
+character_summary <- 
+KE_Single_View_Consolidated %>% 
+  select_if(.predicate = is.character) %>% 
+  summarise(across(.cols = everything(), 
+                   .fns = list(class = class,
+                               distinct = n_distinct, 
+                               nulls = ~sum(is.na(.))
+                               ))) %>% 
+  t() %>% 
+  data.frame() %>% 
+  rownames_to_column()
+
+character_summary
+```
+```{r}
+numeric_summary <-
+KE_Single_View_Consolidated %>% 
+  select_if(.predicate = is.numeric) %>% 
+  summarise(across(.fns = list(class = class,
+                               nulls = ~sum(is.na(.)),
+                               avg = ~mean(x = ., na.rm = TRUE),
+                               median = ~median(x = ., na.rm = TRUE),
+                               min = ~min(.,na.rm = TRUE),
+                               max = ~max(.,na.rm = TRUE),
+                               stdev = ~sd(x = ., na.rm = TRUE)))) %>% 
+  t() %>% 
+  data.frame() %>% 
+  rownames_to_column()
+
+numeric_summary
+```
+
+## Results
+
+```{r}
+KE_summary_stats <-
+bind_rows(character_summary,numeric_summary) %>% 
+  setNames(c("key","value")) %>% 
+  extract(col = key, into = c("column","metric"), regex = "(.*)(_[a-z]+)", remove = TRUE) %>% 
+  mutate(metric = str_remove(string = metric, pattern = "_")) %>%
+  pivot_wider(names_from = metric, values_from = value)
+
+KE_summary_stats
+```
+
+```{r}
+KE_summary_stats$records = nrow(KE_Single_View_Consolidated)
+
+KE_summary_stats <-
+KE_summary_stats %>% 
+  relocate(records, .after = class)
+
+KE_summary_stats
+```
+
+## Distribution of number of members
+
+### Customers with the largest memberships
+
+```{r}
+range(KE_Single_View_Consolidated$MEMBERS)
+
+KE_Single_View_Consolidated %>% 
+  arrange(-MEMBERS) %>% 
+  head(20)
+```
+### Box Plot
+
+```{r}
+KE_Single_View_Consolidated %>% 
+  ggplot(aes(x = MEMBERS))+
+  #geom_text(aes(y = 0, label = MEMBERS), nudge_y = 0.05)+
+  geom_boxplot()
+```
+### Outliers summary
+
+```{r}
+KE_Single_View_Consolidated %>% 
+  select(MEMBERS) %>% 
+  mutate(iqr = IQR(MEMBERS),
+         out_val = 1.5*iqr,
+         outlier = ifelse(MEMBERS>out_val,TRUE,FALSE)) %>% 
+  group_by(outlier) %>% 
+  summarise(membership = mean(MEMBERS),
+            customers = n(),
+            outlier_value = mean(out_val)) %>% 
+  ungroup() %>% 
+  mutate(cust_prop = customers/sum(customers))
+```
+
+
+### Histogram
+
+```{r}
+KE_Single_View_Consolidated %>% 
+  ggplot(aes(x = MEMBERS))+
+  geom_histogram(bins = 30)+
+  scale_x_log10(labels = scales::comma_format())+
+  geom_vline(xintercept = 26)+
+  geom_vline(xintercept = 16)+
+  labs(title = "Member distribution",
+       subtitle = "78% of customer accounts have less <69 members, and an average of 28 members",
+       y = "Number of customer accounts")
+```
+# CONSTANT COLUMNS
+
+```{r}
+colnames(KE_Single_View_Consolidated)[caret::nzv(x = KE_Single_View_Consolidated)]
+```
+```{r}
+KE_Single_View_Consolidated %>% 
+  count(PAYMENT_FREQUENCY) %>% 
+  mutate(prop = n/sum(n))
+```
+
+
+# SAVE DATA
+
+```{r}
+writexl::write_xlsx(KE_summary_stats, "./ke_summary_stats.xlsx")
+```
+
+
+

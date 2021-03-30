@@ -1,0 +1,85 @@
+---
+title: "UAP ZW Simple Data Exploration"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# DATABASE CONNECTION
+
+```{r}
+library(DBI)
+library(tidyverse)
+library(writexl)
+```
+
+```{r}
+conn_ZW = dbConnect(drv = RMySQL::MySQL(),
+                    user="adminom",
+                    password="1!omadmin1!",
+                    host="kenyaom.c256zd31qebg.us-east-1.rds.amazonaws.com",
+                    dbname = "OMConsolidatedZimbabwe")
+```
+
+```{r}
+conn_NG = dbConnect(drv = RMySQL::MySQL(),
+                    user="adminom",
+                    password="1!omadmin1!",
+                    host="kenyaom.c256zd31qebg.us-east-1.rds.amazonaws.com",
+                    dbname = "OMConsolidatedNigeria")
+```
+
+
+
+## List of tables
+
+```{r}
+dbListTables(conn = conn_ZW)
+```
+
+# SIMPLE DATA EXPLORATION
+
+## Table Dimensions
+
+```{r}
+zw_dims <- dbListTables(conn = conn_ZW) %>% 
+  map(.f = ~tbl(src = conn_ZW, from = .)  %>% 
+        collect() %>% 
+        dim())
+```
+
+```{r}
+zw_dims_table <- 
+  tibble(table = dbListTables(conn = conn_ZW),
+       zw_dims) %>% 
+  unnest_wider(col = zw_dims) %>% 
+  rename(rows = ...1,
+         columns = ...2)
+
+zw_dims_table
+```
+
+## Exploring some tables
+
+```{r}
+tbl(src = conn_NG, from = "policy_main")
+```
+
+
+
+# SAVE DATA
+
+```{r}
+write_xlsx(x = ng_dims_table, path = "../zw/zw_dims_table.xlsx")
+```
+
+
+```{r}
+getwd()
+
+temp <- readxl::read_excel("../../input/festus_extraction/kenya/life_AIMS_customers_listing.xlsx", n_max = 50)
+```
+
+

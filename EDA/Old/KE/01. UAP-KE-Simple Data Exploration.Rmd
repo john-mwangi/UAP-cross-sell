@@ -1,0 +1,174 @@
+---
+title: "Simple Data Exploration"
+output: html_document
+---
+
+
+```{r}
+getwd()
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = FALSE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+
+```{r}
+if(!require(pacman)){install.packages("pacman")}
+pacman::p_load(DBI,tidyverse)
+```
+
+
+```{r}
+load("./UAP_KE_EDA.RData")
+```
+
+```{r}
+KE_Single_View <- readRDS(file = "./KE_Single_View.rds")
+```
+
+# DATABASE CONNECTION
+
+```{r}
+#source("../src/config.R")
+```
+
+```{r}
+conn_KE = dbConnect(drv = RMySQL::MySQL(),
+                    user="adminom",
+                    password="1!omadmin1!",
+                    host="kenyaom.c256zd31qebg.us-east-1.rds.amazonaws.com",
+                    dbname = "OMConsolidatedDB")
+```
+
+
+Database: `r dbGetInfo(dbObj = conn_KE)$dbname` <br> Description: Kenya Subsidiary database
+
+List of tables in the database
+
+```{r}
+KE_tables_list = dbListTables(conn = conn_KE)
+
+KE_tables_list
+```
+
+
+```{r}
+# Nested list of database tbls
+KE_tbls <- KE_tables_list %>% 
+  map(.f = ~tbl(src = conn_KE, from = .))
+```
+
+
+```{r}
+#Table dimensions
+KE_dims_list <- KE_tables_list %>%
+map(`.f` = ~tbl(src = conn_KE, from = .) %>% collect() %>% dim()) %>% 
+tibble()
+```
+
+```{r include=FALSE}
+KE_dims_table <- 
+  tibble(KE_tables_list) %>% 
+  bind_cols(
+    KE_dims_list %>% 
+    setNames("dim") %>% 
+    unnest_wider(dim)) %>% 
+  rename(rows = ...2,
+         cols = ...3)
+
+head(KE_dims_table)
+```
+
+Dimensions of the tables in the database.
+
+```{r}
+KE_dims_table %>% 
+  arrange(desc(rows)) %>% 
+  write_xlsx("./KE_database_tables.xlsx")
+```
+
+
+Headers of database tables
+```{r}
+tbl(src = conn_KE, from = "relationship") %>% 
+  colnames() %>% 
+  tibble(fields = .)
+```
+
+```{r}
+tbl(src = conn_KE, from = "Health_intermediary")
+```
+
+
+```{r}
+tbl(src = conn_KE, from = "Health_Policy_Header")
+```
+
+## Data Extraction
+
+Extract useful tables as csv files.
+
+```{r}
+useful_tables <- c("health_claims",
+"Health_Policy_Details",
+"Health_Policy_Header",
+"Health_intermediary",
+"intermediary_master",
+"policy_type",
+"policy_term",
+"gender",
+"policy_status",
+"relationship")
+```
+
+
+```{r}
+for (t in seq_along(useful_tables)){
+  tbl(src = conn_KE, from = useful_tables[t]) %>% 
+    collect() %>% 
+    write_csv(paste0("./useful_tables/",useful_tables[t],".csv"))
+}
+```
+
+Read downloaded csv files
+
+```{r}
+filepaths <- dir(path = "./useful_tables/", pattern = "*.csv", all.files = FALSE, full.names = TRUE, ignore.case = TRUE)
+```
+
+
+```{r}
+tables <- filepaths %>% 
+  map(.f = read_csv)
+```
+
+
+```{r}
+table_names <- tibble(filepaths) %>% 
+  separate(col = filepaths, into = c("lead","folder","tablename"), remove = FALSE, sep = "/") %>% 
+  select(tablename) %>% 
+  mutate(tablename = str_replace(string = tablename, pattern = ".csv", replacement = "")) %>% 
+  pull(tablename)
+```
+
+
+```{r}
+for (a in seq_along(tables)){
+  assign(x = table_names[a], value = tables[[a]])
+}
+```
+
+## Simple Data Exploration
+
+```{r}
+relationship
+```
+
+```{r}
+Health_Policy_Header %>% 
+  count(POLICY_TYPE)
+```

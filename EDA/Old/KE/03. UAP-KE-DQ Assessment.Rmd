@@ -1,0 +1,106 @@
+---
+title: "Data Quality Assessment"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(tidyverse)
+```
+
+
+```{r}
+KE_Single_View <- readRDS(file = "./KE_Single_View.rds")
+```
+
+# DATA QUALITY ASSESSMENT
+
+We will be using the DMBOK Framework.
+
+## Validity
+
+```{r}
+colnames(KE_Single_View)
+```
+
+```{r}
+unique_col_vals <- 
+  apply(KE_Single_View %>% 
+        select(-ACCOUNT_NO,-INTERMEDIARY_CODE,-MEMBER_NO,-START_DATE,-AMOUNT_COVERED), 
+      MARGIN = 2, 
+      FUN = function(x) unique(x))
+```
+
+The data has valid unique entries.
+
+```{r}
+unique_col_vals
+```
+
+```{r}
+KE_Single_View %>% 
+  count(COVER_TYPE)
+
+KE_Single_View %>% 
+  count(POLICY_TERM,TERM_NAME) %>% 
+  mutate(prop = scales::percent(n/sum(n), accuracy = 0.1))
+
+Health_Policy_Header %>% 
+  count(STATUS, POLICY_TERM) %>% 
+  mutate(prop = scales::percent(n/sum(n), accuracy = 0.1))
+```
+
+Checking validity of data types
+
+```{r}
+KE_Single_View %>% 
+  summarise_all(.funs = class)
+```
+
+## Uniqueness
+
+Checking source data for duplicates.
+
+```{r}
+Health_Policy_Header <- read_csv(file = "../input/useful_tables/Health_Policy_Header.csv")
+```
+
+```{r}
+any(duplicated(Health_Policy_Header$ACCOUNT_NO))
+```
+
+```{r}
+any(duplicated(Health_Policy_Header$MEMBER_NO))
+```
+
+
+## Accuracy
+
+Checking for records that did not join to the single customer view
+
+```{r}
+policy_details_accounts <- 
+  read_csv("../input/useful_tables/Health_Policy_Details.csv") %>% 
+  pull(ACCOUNT_NO)
+
+policy_header_accounts <-
+  read_csv("../input/useful_tables/Health_Policy_Header.csv") %>% 
+  pull(ACCOUNT_NO)
+```
+
+
+```{r}
+length(setdiff(policy_details_accounts,policy_header_accounts))
+```
+
+
+# SAVE PROJECT DATA
+
+```{r}
+write_rds(unique_col_vals, file = "./unique_col_vals.rds")
+```
+
