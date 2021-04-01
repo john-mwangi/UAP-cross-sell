@@ -1,0 +1,126 @@
+---
+title: "Cross-sell Model"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(recommenderlab)
+library(tidyverse)
+```
+
+
+# Import Data
+
+```{r}
+health_product_holding_final <- readRDS("../../Data Prep/KE/health_product_holding_final.rds")
+
+asset_product_holding_final <- readRDS("../../Data Prep/KE/asset_product_holding_final.rds")
+```
+
+# Check number of products & NAs
+
+```{r}
+health_product_holding_final %>% 
+  count(Product)
+
+
+asset_product_holding_final %>% 
+  count(FUND_NAME)
+```
+
+
+```{r}
+head(health_product_holding_final)
+head(asset_product_holding_final)
+```
+
+# Renaming of columns
+
+```{r}
+health_product_holding_final %>% 
+  rename(PRODUCT = Product) -> health_product_holding_final
+
+
+asset_product_holding_final %>% 
+  mutate(ACCOUNT_NO = as.character(ACCOUNT_NO)) %>% 
+  rename(PRODUCT = FUND_NAME) -> asset_product_holding_final
+```
+
+
+# Merge the tables
+
+```{r}
+products_df <-
+bind_rows(
+  asset_product_holding_final,
+  health_product_holding_final
+)
+
+dim(products_df)
+head(products_df)
+```
+
+
+# Create dummy variables
+
+```{r}
+products_df <-
+products_df %>% 
+  pivot_wider(names_from = PRODUCT, 
+              values_from = n, 
+              values_fill = 0)
+
+dim(products_df)
+head(products_df)
+```
+
+# Missing account numbers
+
+```{r}
+setdiff(x = health_product_holding_final$ACCOUNT_NO, 
+        y = products_df$ACCOUNT_NO)
+
+setdiff(x = asset_product_holding_final$ACCOUNT_NO, 
+        y = products_df$ACCOUNT_NO)
+```
+
+
+# Convert to matrix
+
+```{r}
+products_matrix <-
+products_df %>% 
+  select(-ACCOUNT_NO) %>% 
+  as.matrix()
+
+rownames(products_matrix) <- products_df %>% pull(ACCOUNT_NO)
+```
+
+# Check matrix
+
+```{r}
+rownames(products_matrix)[1:10]
+colnames(products_matrix)[1:10]
+```
+
+# Convert to binaryRatingMatrix
+
+```{r}
+products_rating_matrix <- as(products_matrix, "binaryRatingMatrix")
+```
+
+
+```{r}
+class(products_rating_matrix)
+```
+# Export
+
+```{r}
+saveRDS(object = products_rating_matrix, file = "./products_rating_matrix.rds")
+```
+
