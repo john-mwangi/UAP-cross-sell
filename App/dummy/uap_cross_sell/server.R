@@ -54,7 +54,9 @@ dfScenario1 = reactive({
                 select(user_id,item,business_line,score) %>% 
                 arrange(desc(score)) %>% 
                 group_by(user_id, business_line) %>% 
-                slice(1:input$recomm_limit)
+                slice(1:input$recomm_limit) %>% 
+                rename(customer_num = user_id,
+                       product = item)
             
             return(list(recommendations=preds_all))
             
@@ -110,7 +112,8 @@ dfScenario3 = reactive({
         left_join(uap_products, by = c("item"="product")) %>% 
         group_by(business_line) %>% 
         arrange(desc(score), .by_group = TRUE) %>% 
-        slice(1:input$recomm_limit)
+        slice(1:input$recomm_limit) %>% 
+        rename(product = item)
     
     return(list(recommendations=pre_opt3_df))
     }
@@ -136,7 +139,9 @@ output$target_list <- renderDataTable(rownames = FALSE,
                                           ungroup() %>% 
                                           group_by(user_id, max_score) %>% 
                                           arrange(desc(max_score)) %>% 
-                                          ungroup())
+                                          ungroup() %>% 
+                                          rename(customer_num = user_id,
+                                                 product = item))
 
 #Scenario 3
 output$chosen_recomms <- renderDataTable(rownames = FALSE, {
@@ -155,7 +160,8 @@ output$popular_products <- renderDataTable(rownames = FALSE,
        group_by(business_line) %>% 
        slice(1:input$recomm_limit) %>% 
        rename(products_bought = n) %>% 
-       ungroup())
+       ungroup() %>% 
+       rename(product = item))
 
 
 

@@ -45,6 +45,7 @@ We will use MSWeb data.
 ```{r}
 dim(MSWeb)
 ```
+
 ```{r}
 rownames(MSWeb)[1:10] #user ids
 colnames(MSWeb)[1:10] #product names
@@ -558,6 +559,7 @@ rec_weights_sample
 ```{r}
 recommenderRegistry$get_entry_names()
 ```
+
 ## Test with some weights
 
 ```{r}
