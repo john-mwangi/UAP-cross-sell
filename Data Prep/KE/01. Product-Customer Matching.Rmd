@@ -1,0 +1,503 @@
+---
+title: "Product-Customer Matching"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(data.table)
+library(tidyverse)
+```
+
+
+# HEALTH PRODUCTS
+
+Pick product details: product names & customer account number.
+
+```{r}
+health_products_raw <- 
+  fread(file = "../../../../C - Documentation/Data/festus_extraction/kenya/health/policyheader_nonlife_kenya_product_names-HEALTH.csv")
+```
+
+
+```{r}
+head(health_products_raw)
+```
+
+## Product Holding
+
+The table below returns a table showing products held by each account (1 product, 1 account). n should be 1 in all cases.
+
+```{r}
+health_prod_holding <-
+health_products_raw %>% 
+  distinct(ACCOUNT_NO, Product) %>% 
+  count(ACCOUNT_NO,Product) %>% 
+  arrange(desc(n))
+
+dim(health_prod_holding)
+```
+
+
+```{r}
+health_prod_holding %>% 
+  count(ACCOUNT_NO) %>% 
+  arrange(desc(n))
+```
+One customer account number can hold more than one product.
+
+```{r}
+health_prod_holding %>% 
+  filter(ACCOUNT_NO=="420754")
+```
+
+
+## Fixing Product Names
+
+Basically, you have different afya products:- imara, county, exec etc; in addition, anything that is not retail should be corporate; anything that is retail and not defined should be Afya Imara.
+
+```{r}
+health_products_amended <-
+health_products_raw %>%
+  select(ACCOUNT_NO, Product, POLICY_TYPE) %>% 
+  filter(POLICY_TYPE=="RETAIL") %>% 
+  filter(str_detect(string = Product, 
+                    pattern = "^AFYA.*", 
+                    negate = TRUE)) %>% 
+  mutate(Product_corrected = "AFYA IMARA") %>% 
+  distinct(ACCOUNT_NO, Product = Product_corrected)
+
+head(health_products_amended)
+```
+
+Check if it worked
+
+```{r}
+health_products_amended %>% 
+  count(Product)
+```
+
+## Merged Products [FINAL]
+
+Because one customer account number can contain more than one product, we join on the basis of `ACCOUNT_NO` and `Product`.
+
+```{r}
+health_product_holding_final <- health_prod_holding %>% 
+# Exclude rows that were not amended
+# Expect to see Corporate products and Retail products starting with Afya
+  anti_join(health_products_raw %>%
+            select(ACCOUNT_NO, Product, POLICY_TYPE) %>% 
+            filter(POLICY_TYPE=="RETAIL") %>% 
+            filter(str_detect(string = Product, 
+                              pattern = "^AFYA.*", 
+                              negate = TRUE)), 
+            by = c("ACCOUNT_NO", "Product")) %>% 
+# Include amended rows
+  bind_rows(health_products_amended)
+
+dim(health_product_holding_final)
+dim(health_prod_holding)
+```
+
+Check if successful.
+
+```{r}
+health_product_holding_final %>% 
+  count(ACCOUNT_NO, Product) %>% 
+  arrange(desc(n))
+```
+
+## Number of products
+
+```{r}
+health_product_holding_final %>% 
+  summarise(n_distinct(Product))
+```
+
+```{r}
+health_product_holding_final %>% 
+  count(Product) %>% 
+  arrange(desc(n))
+```
+
+```{r}
+health_product_holding_final <- health_product_holding_final %>% 
+  mutate(n = replace_na(1))
+```
+
+```{r}
+health_product_holding_final
+```
+
+
+## Export
+
+```{r}
+saveRDS(health_product_holding_final, file = "./health_product_holding_final.rds")
+```
+
+# HEALTH CUSTOMERS
+
+Blank Account Numbers are omitted since they do not contain any data.
+
+```{r}
+health_customers_raw <-
+fread("../../../../C - Documentation/Data/festus_extraction/kenya/health/health_customer_kenya.csv") %>% 
+  filter(ACCOUNT_NO != "")
+```
+
+
+```{r}
+dim(health_customers_raw)
+head(health_customers_raw)
+```
+
+
+## Customer Attributes
+
+Select customer attributes which either on their own or in combination can form a unique customer identifier.
+
+```{r}
+colnames(health_customers_raw)
+```
+
+`ACCOUNT_NO` is unique for all records.
+
+```{r}
+health_customers_raw %>% 
+  count(ACCOUNT_NO) %>% 
+  arrange(desc(n)) %>%
+  head()
+```
+
+
+```{r}
+customer_attr <- c("ACCOUNT_NO",
+                   "PRI_ACCOUNT_NO",
+                   "FULL_NAMES",
+                   "TELEPHONE_NUMBER",
+                   "MOBILE_NUMBER",
+                   "PRIMARY_EMAIL",
+                   "ID_NUMBER",
+                   "DATE_OF_BIRTH",
+                   "MEMBER_NO",
+                   "CLIENT_NO",
+                   "BANK_VERIFICATION_NUMBER")
+```
+
+
+## Candidate unique customer identifiers
+
+List of candidate unqiue customer identifiers.
+
+```{r}
+customer_attr_summary_health <-
+health_customers_raw %>% 
+  select(customer_attr) %>% 
+  summarise_all(list(nulls = ~sum(is.na(.)),
+                     distinct = n_distinct)) %>% 
+  pivot_longer(cols = everything()) %>% 
+  extract(col = name,
+          into = c("field","key"), regex = "(.*)_([a-z].*)") %>% 
+  pivot_wider(names_from = key, values_from = value) %>% 
+  mutate(rows = nrow(health_customers_raw)) %>% 
+  arrange(nulls)
+
+customer_attr_summary_health
+```
+
+## Account Number
+
+The format of this account number is different from that which ties the product name.
+
+Is the `ACCOUNT_NO` unique for each customer? Yes. This means that it is a candidate for customer unique identifier across the business if it is consistent.
+
+If the Account Number is not consistent, we can use alternative identifiers listed above.
+
+```{r}
+account_num_summary <-
+health_customers_raw %>%
+  filter(!is.na(ID_NUMBER), ID_NUMBER != "") %>% 
+  distinct(ACCOUNT_NO,ID_NUMBER) %>% 
+  count(ACCOUNT_NO,ID_NUMBER) %>% 
+  arrange(desc(n)) %>% 
+  head(10)
+
+account_num_summary
+```
+
+
+## Conclusion
+
+Because the account numbers on the Customer Master are different from those that contain product names, we will use those in the product names. Nonetheless, we've been able to conclude that each customer has a unique account number.
+
+Full names is another possible unique identifier.
+
+
+# GENERAL INSURANCE PRODUCTS
+
+## Awaiting product names.
+
+
+
+# GI CUSTOMERS
+
+5 worksheets.
+
+```{r}
+gi_clients_1 <-
+readxl::read_xls("../../../../C - Documentation/Data/festus_extraction/kenya/non_life/clients_kenya.xls", sheet = 1)
+
+gi_clients_2 <-
+readxl::read_xls("../../../../C - Documentation/Data/festus_extraction/kenya/non_life/clients_kenya.xls", sheet = 2)
+
+gi_clients_3 <-
+readxl::read_xls("../../../../C - Documentation/Data/festus_extraction/kenya/non_life/clients_kenya.xls", sheet = 3)
+
+gi_clients_4 <-
+readxl::read_xls("../../../../C - Documentation/Data/festus_extraction/kenya/non_life/clients_kenya.xls", sheet = 4)
+
+gi_clients_5 <-
+readxl::read_xls("../../../../C - Documentation/Data/festus_extraction/kenya/non_life/clients_kenya.xls", sheet = 5)
+```
+
+
+
+```{r}
+dim(gi_clients_1)
+head(gi_clients_1)
+```
+
+
+```{r}
+colnames(gi_clients_1)
+```
+
+```{r}
+gi_clients_1 %>% 
+  summarise(sum(is.na(ACCOUNT_NO)))
+```
+
+## Candidate unique customer identifier
+
+```{r}
+customer_attr
+```
+Bind all records
+
+```{r}
+gi_clients_all <- 
+  bind_rows(gi_clients_1,gi_clients_2,gi_clients_3,gi_clients_4,gi_clients_5)
+```
+
+
+
+```{r}
+customer_attr_summary_gi <-
+gi_clients_all %>% 
+  select(customer_attr) %>% 
+  summarise_all(list(nulls = ~sum(is.na(.)),
+                     distinct = n_distinct)) %>% 
+  pivot_longer(cols = everything()) %>% 
+  extract(col = name,
+          into = c("field","key"), regex = "(.*)_([a-z].*)") %>% 
+  pivot_wider(names_from = key, values_from = value) %>% 
+  mutate(rows = nrow(gi_clients_all)) %>%
+  arrange(nulls)
+
+customer_attr_summary_gi
+```
+Do the blank Account Numbers contain data? Yes, some even have KRA PIN.
+
+```{r}
+gi_clients_all %>% 
+  filter(is.na(ACCOUNT_NO)) %>% 
+  head()
+```
+
+
+## Conclusion
+
+The client number or full names are possible unique customer identifier.
+
+
+# ASSET MGT PRODUCTS
+
+
+```{r}
+asset_mgt_products_raw <-
+read_csv("../../../../C - Documentation/Data/festus_extraction/kenya/asset_mgt/Investment Account Dataset.csv")
+```
+
+
+```{r}
+head(asset_mgt_products_raw)
+```
+
+## Products Holding
+
+```{r}
+asset_product_holding <-
+asset_mgt_products_raw %>% 
+  distinct(ACCOUNT_NO,FUND_NAME) %>% 
+  count(ACCOUNT_NO,FUND_NAME) %>% 
+  arrange(desc(n))
+
+head(asset_product_holding)
+```
+
+## Number of products
+
+```{r}
+length(unique(asset_product_holding$FUND_NAME))
+```
+
+```{r}
+asset_product_holding %>% 
+  count(FUND_NAME) %>% 
+  arrange(desc(n))
+```
+
+
+```{r}
+asset_mgt_products <-
+asset_product_holding %>% 
+  count(FUND_NAME) %>% 
+  arrange(desc(n)) %>% 
+  filter(str_detect(string = FUND_NAME,
+                    pattern = "Old Mutual.*") | 
+         str_detect(string = FUND_NAME,
+                    pattern = ".* Plan")) %>% 
+  pull(FUND_NAME)
+```
+
+
+## Relevant products [FINAL]
+
+```{r}
+asset_product_holding_final <-
+asset_product_holding %>% 
+  filter(FUND_NAME %in% asset_mgt_products)
+
+dim(asset_product_holding_final)
+head(asset_product_holding_final)
+```
+
+## Check NAs
+
+```{r}
+asset_product_holding_final %>% 
+  filter(is.na(n))
+```
+
+# ASSET MGT CUSTOMERS
+
+## Customer identifier
+
+```{r}
+asset_mgt_customers_raw <-
+read_csv("../../../../C - Documentation/Data/festus_extraction/kenya/asset_mgt/Customer Dataset.csv") %>% 
+  select(-starts_with("X"))
+```
+
+
+```{r}
+head(asset_mgt_customers_raw)
+```
+
+```{r}
+customer_attr_summary_asset <-
+asset_mgt_customers_raw %>% 
+  select(customer_attr) %>% 
+  summarise_all(list(nulls = ~sum(is.na(.)),
+                     distinct = n_distinct)) %>% 
+  pivot_longer(cols = everything()) %>% 
+  extract(col = name,
+          into = c("field","key"), regex = "(.*)_([a-z].*)") %>% 
+  pivot_wider(names_from = key, values_from = value) %>%
+  mutate(rows = nrow(asset_mgt_customers_raw)) %>% 
+  arrange(nulls)
+
+customer_attr_summary_asset
+```
+
+## Match account numbers
+
+Do account numbers under products and customer master match? Yes, all of them match.
+
+```{r}
+length(unique(asset_product_holding$ACCOUNT_NO))
+
+length(
+  intersect(unique(asset_product_holding$ACCOUNT_NO),
+            unique(asset_mgt_products_raw$ACCOUNT_NO))
+)
+```
+
+## Conclusion
+
+Account Number and Full Names are possible unique customer identifiers.
+
+# GROUP CUSTOMER IDENTIFIER
+
+* Health - Account Number (in products)
+* GI - Client Number, Full Names (in customers, we wait for products)
+* Asset management - Account Number (in products)
+* Life - TBD
+
+## Way forward
+
+We proceed with Health and Asset Management
+
+## Match Account Numbers
+
+Health and Asset Management.
+
+```{r}
+length(unique(health_product_holding_final$ACCOUNT_NO))
+
+length(unique(asset_product_holding_final$ACCOUNT_NO))
+```
+Some Account Numbers in Health and Asset Mgt match.
+
+```{r}
+length(
+    intersect(
+      unique(health_product_holding_final$ACCOUNT_NO),
+      unique(asset_product_holding_final$ACCOUNT_NO)))
+```
+
+## Conclusion
+
+Account Number (in products) can be a common unique customer identifier between Health and Asset Management.
+
+
+# EXPORT
+
+```{r}
+save.image(file = "./01Apr-Customer_Matching.RData")
+```
+
+
+```{r}
+# Health product holdings
+saveRDS(object = health_product_holding_final, 
+        file = "./health_product_holding_final.rds")
+
+# Asset mgt product holdings
+saveRDS(object = asset_product_holding_final, 
+        file = "./asset_product_holding_final.rds")
+```
+
+
+
+
+
+
+
+
+
