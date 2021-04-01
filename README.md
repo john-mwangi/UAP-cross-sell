@@ -13,3 +13,6 @@ Exploratory data analysis scripts.
 
 ## Models
 Cross selling models for various countries.
+
+## Data Prep
+Folder containing scripts/output of data cleaning processes.
