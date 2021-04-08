@@ -134,12 +134,6 @@ health_product_holding_final
 ```
 
 
-## Export
-
-```{r}
-saveRDS(health_product_holding_final, file = "./health_product_holding_final.rds")
-```
-
 # HEALTH CUSTOMERS
 
 Blank Account Numbers are omitted since they do not contain any data.
@@ -154,6 +148,26 @@ fread("../../../../C - Documentation/Data/festus_extraction/kenya/health/health_
 ```{r}
 dim(health_customers_raw)
 head(health_customers_raw)
+```
+
+## Check Account Numbers
+
+Check if account numbers in the customer master file are the same that link to products. They aren't.
+
+```{r}
+customer_acc_nums <-
+health_customers_raw %>% 
+  select(PRI_ACCOUNT_NO) %>% 
+  extract(col = PRI_ACCOUNT_NO, 
+          into = c("PRI_ACCOUNT","SEQ"), 
+          regex = ("(.*)-(.*)"), 
+          remove = FALSE)
+```
+
+
+```{r}
+length(intersect(x = unique(customer_acc_nums$PRI_ACCOUNT),
+                 y = unique(health_product_holding_final$ACCOUNT_NO)))
 ```
 
 
@@ -396,8 +410,6 @@ asset_product_holding_final %>%
 
 # ASSET MGT CUSTOMERS
 
-## Customer identifier
-
 ```{r}
 asset_mgt_customers_raw <-
 read_csv("../../../../C - Documentation/Data/festus_extraction/kenya/asset_mgt/Customer Dataset.csv") %>% 
@@ -405,9 +417,24 @@ read_csv("../../../../C - Documentation/Data/festus_extraction/kenya/asset_mgt/C
 ```
 
 
+## Check Account Number
+
+The Account Numbers in the product and customer master files are similar.
+
+```{r}
+length(intersect(x = asset_mgt_customers_raw$ACCOUNT_NO,
+                 y = asset_product_holding_final$ACCOUNT_NO))
+```
+
+
+## Customer identifier
+
+
 ```{r}
 head(asset_mgt_customers_raw)
 ```
+
+Account Numbers are unique per customer.
 
 ```{r}
 customer_attr_summary_asset <-
@@ -425,18 +452,6 @@ asset_mgt_customers_raw %>%
 customer_attr_summary_asset
 ```
 
-## Match account numbers
-
-Do account numbers under products and customer master match? Yes, all of them match.
-
-```{r}
-length(unique(asset_product_holding$ACCOUNT_NO))
-
-length(
-  intersect(unique(asset_product_holding$ACCOUNT_NO),
-            unique(asset_mgt_products_raw$ACCOUNT_NO))
-)
-```
 
 ## Conclusion
 
@@ -476,10 +491,16 @@ length(
 Account Number (in products) can be a common unique customer identifier between Health and Asset Management.
 
 
+# LIMITATIONS
+
+1. Health: It is not possible to link an individual policy to the customer master.
+
+
 # EXPORT
 
 ```{r}
 save.image(file = "./01Apr-Customer_Matching.RData")
+load("./01Apr-Customer_Matching.RData")
 ```
 
 
@@ -491,6 +512,10 @@ saveRDS(object = health_product_holding_final,
 # Asset mgt product holdings
 saveRDS(object = asset_product_holding_final, 
         file = "./asset_product_holding_final.rds")
+
+# Asset mgt customers
+saveRDS(object = asset_mgt_customers_raw, 
+        file = "./asset_mgt_customers_raw.rds")
 ```
 
 
