@@ -1,0 +1,208 @@
+---
+title: "Customer Propensity"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(lubridate)
+library(tidyverse)
+```
+
+# CUSTOMER ATTRIBUTES
+
+Define the customer trait of interest.
+
+```{r}
+customer_traits <- c("ACCOUNT_NO",
+                     "GENDER",
+                     "PHYSICAL_ADDRESS",
+                     "DATE_OF_BIRTH",
+                     "RELATIONSHIP",
+                     "PERSON_OR_COMPANY",
+                     "MARITAL_STATUS",
+                     "OCCUPATION")
+```
+
+
+# ASSET MGT
+
+```{r}
+asset_mgt_customers_raw <- readRDS("./asset_mgt_customers_raw.rds")
+
+asset_product_holding_final <- readRDS("./asset_product_holding_final.rds") %>% 
+  mutate(ACCOUNT_NO = as.character(ACCOUNT_NO))
+```
+
+## Field completion rate
+
+Traits with <6% null rate can be suitable for proceeding with. Traits with too many unique values will be excluded.
+
+```{r}
+asset_customer_traits_summary <-
+asset_mgt_customers_raw %>% 
+  select(customer_traits) %>% 
+  summarise_all(list(nulls = ~sum(is.na(.)),
+                     distinct = n_distinct)) %>% 
+  pivot_longer(cols = everything()) %>% 
+  extract(col = name,
+          into = c("field","key"), regex = "(.*)_([a-z].*)") %>% 
+  pivot_wider(names_from = key, values_from = value) %>% 
+  mutate(rows = nrow(asset_mgt_customers_raw),
+         prop = nulls/rows,
+         perc = scales::percent(prop, accuracy = 0.1)) %>% 
+  arrange(nulls)
+
+asset_customer_traits_summary
+```
+
+## Shortlisted traits
+
+Shortlist variables without too many nulls or unique values
+
+```{r}
+# Variables without too many nulls
+asset_customer_traits_final <-
+asset_customer_traits_summary %>% 
+  filter(prop <= 0.06) %>% 
+  pull(field)
+
+# Variables with too many unique values
+asset_customer_traits_final[!asset_customer_traits_final %in% c("OCCUPATION")] -> asset_customer_traits_final
+
+asset_customer_traits_final
+```
+
+## Remove constant variables
+
+```{r}
+asset_mgt_customers_raw %>% 
+  select(asset_customer_traits_final) %>% 
+  caret::nearZeroVar() -> asset_nzv
+```
+
+
+```{r}
+asset_propensity_df <-
+asset_mgt_customers_raw %>% 
+  select(asset_customer_traits_final) %>% 
+  select(-c(asset_nzv))
+
+asset_propensity_df
+```
+
+## Fix date column
+
+```{r}
+asset_propensity_df_proc <-
+asset_propensity_df %>%
+  mutate(Date_Extract = str_extract(string = DATE_OF_BIRTH, 
+                                    pattern = ".* ")) %>% 
+  mutate(BIRTH_DATE = mdy(Date_Extract),
+         AGE = time_length(today()-BIRTH_DATE,
+                           unit = "years"),
+         AGE = round(AGE)) %>% 
+  select(-contains("Date"))
+
+head(asset_propensity_df_proc)
+```
+
+## Check unique records per customer/account number
+
+```{r}
+asset_acc_unique <-
+asset_propensity_df_proc %>% 
+  count(ACCOUNT_NO) %>% 
+  arrange(desc(n))
+
+asset_acc_unique
+```
+
+## Account numbers to exclude
+
+```{r}
+asset_acc_exclude <-
+asset_acc_unique %>% 
+  head(5) %>% 
+  pull(ACCOUNT_NO)
+```
+
+
+```{r}
+asset_propensity_df_proc %>% 
+  filter(!ACCOUNT_NO %in% asset_acc_exclude) -> asset_propensity_df_proc
+
+
+asset_propensity_df_proc
+```
+
+## Fix Marital Status
+
+```{r}
+asset_propensity_df_proc %>% 
+  count(MARITAL_STATUS, sort = TRUE)
+```
+
+These rows can be excluded since they for 4% of the records.
+
+```{r}
+asset_propensity_df_proc %>% 
+  filter(MARITAL_STATUS %in% c(NA,"NATIONAL_ID","PERSON"))
+```
+
+```{r}
+asset_propensity_df_proc <-
+asset_propensity_df_proc %>% 
+  filter(!MARITAL_STATUS %in% c(NA,"NATIONAL_ID","PERSON"))
+
+
+asset_propensity_df_proc
+```
+
+## Fix age
+
+Impute missing age with mean.
+
+```{r}
+mean(asset_propensity_df_proc$AGE, na.rm = TRUE)
+
+median(asset_propensity_df_proc$AGE, na.rm = TRUE)
+```
+
+```{r}
+asset_propensity_df_proc <-
+asset_propensity_df_proc %>% 
+  mutate(AGE = replace_na(data = AGE, 
+                          replace = mean(AGE, na.rm = TRUE))) %>% 
+  mutate(AGE = round(AGE))
+
+head(asset_propensity_df_proc)
+```
+
+## Add product names
+
+```{r}
+asset_propensity_df_final <-
+asset_propensity_df_proc %>%
+  left_join(asset_product_holding_final, by = "ACCOUNT_NO") %>% 
+  select(-n)
+
+asset_propensity_df_final
+```
+
+# EXPORT
+
+```{r}
+# Dataframe for propensity modeling
+saveRDS(object = asset_propensity_df_final,
+        file = "./asset_propensity_df_final.rds")
+
+
+# Project image
+save.image(file = "./01Apr_Propensity.RData")
+```
+
