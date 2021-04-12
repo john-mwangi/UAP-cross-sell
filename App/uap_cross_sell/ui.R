@@ -28,49 +28,52 @@ shinyUI(fluidPage(
         # Main panel for recommendation results
         mainPanel(
             tabsetPanel(type = "pills",
-                        tabPanel(title = "1. I have a customer no.", 
+                        tabPanel(title = "ACCOUNT NO.", 
                                  tags$p("Use this tab when you already have a customer in mind 
-                                        that you'd want to target and you have their customer number."),
+                                        that you'd want to target and you have their account number."),
                                  textInput(inputId = "customer_ids", 
-                                           label = "Enter customer numbers separated by commas",
+                                           label = "Enter account numbers separated by commas",
                                            value = paste0(rownames(products_rating_matrix)[1:2], 
                                                           collapse = ",")),
                                  dataTableOutput(outputId = "customer_recomms")),
-                        tabPanel(title = "2. I want a list of customers",
+                        tabPanel(title = "CUSTOMERS",
                                  tags$p("Use this tab when you don't have a specific customer in mind but
                                 you want a list of customers who are most likely to make a purchase. If you
-                                have a specific customer number in mind, you can as well search it here."),
-                                tags$p("The table below displays only the first 500 records. Click the link below
+                                have a specific account number in mind, you can as well search it here."),
+                                tags$p("The table below displays only the first few records. Click the link below
                                        to download recommendations for all UAP-OM customers in Excel format."),
                                 tags$a(href="recommendations_df.csv", "Download all records!"),
                                 tags$p(),
                                 dataTableOutput(outputId = "target_list")),
-                        tabPanel(title = "3. Additional products",
+                        tabPanel(title = "PRODUCTS",
                                  tags$p("Use this tab when you want to recommend additional products on
                                 top of what a customer has already chosen."),
                                 tags$p(),
                                 selectInput(inputId = "chosen_products", 
-                                            label = "Products held by the customer", 
+                                            label = "Products chosen by the customer", 
                                             choices = colnames(products_rating_matrix),
                                             multiple = TRUE),
                                 dataTableOutput(outputId = "chosen_recomms")),
-                        tabPanel(title = "4. Our most popular products",
+                        tabPanel(title = "POPULAR",
                                  tags$p("These are the most popular products at UAP-OM. It is a good place 
-                                to start if you don't have any information about a customer's 
-                                preferences"),
+                                to start if you don't have any information about a customer's preferences"),
                                 tags$p(),
                                 DTOutput(outputId = "popular_products")),
-                        tabPanel(title = "5. Bulk upload",
+                        tabPanel(title = "BULK",
                                  tags$p("Use this tab for obtaining product recommendations in bulk by providing
-                                        customer account numbers or a list of products they hold. Use the template
-                                        provided on the link below."),
+                                        customer account numbers or a list of products they hold or have expressed
+                                        interest it. Use the template provided on the link below."),
                                  tags$a(href="cs_upload_template.xlsx", "Bulk upload template."),
                                  fileInput(inputId = "data_upload", 
                                            label = "", 
                                            multiple = FALSE,
                                            accept = ".xlsx"),
+                                 tags$hr(),
+                                 tags$h6("PRODUCT NAMES"),
                                  tags$p("Recommendations based on product names provided will appear here."),
                                  dataTableOutput(outputId = "products_upload"),
+                                 tags$hr(),
+                                 tags$h6("ACCOUNT NUMBERS"),
                                  tags$p("Recommendations based on account numbers provided will appear here."),
                                  #textOutput(outputId = "checks"),
                                  dataTableOutput(outputId = "accounts_upload"))

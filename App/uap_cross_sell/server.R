@@ -1,4 +1,5 @@
 load("07Apr_Models.RData")
+recommendations_detailed <- readRDS("recommendations_detailed.rds")
 
 library(shiny)
 library(recommenderlab)
@@ -15,11 +16,12 @@ shinyServer(function(input, output, session) {
 
         records <- strsplit(x = input$customer_ids, split = ",")[[1]]
 
-        chosen_customers <- recommendations_df %>%
+        chosen_customers <- recommendations_detailed %>%
             filter(ACCOUNT_NO %in% records) %>%
             arrange(desc(rating)) %>%
             slice(1:input$recomm_limit) %>%
-            arrange(desc(max_rating))
+            arrange(desc(max_rating)) %>% 
+            setNames(str_to_upper(colnames(.)))
 
         return(list(recommendations=chosen_customers))
 
@@ -69,7 +71,8 @@ shinyServer(function(input, output, session) {
                 relocate(BUSINESS_LINE, .after = PRODUCT) %>% 
                 group_by(BUSINESS_LINE) %>% 
                 arrange(desc(rating), .by_group = TRUE) %>% 
-                slice(1:input$recomm_limit)
+                slice(1:input$recomm_limit) %>% 
+                setNames(str_to_upper(colnames(.)))
             
             return(list(recommendations=user_choice_recommendations_df))
         }
@@ -92,12 +95,14 @@ shinyServer(function(input, output, session) {
                                                 sheet = "customer_prod") %>% pull(PRODUCT)
         
         # Recommendations using uploaded customer numbers
-        recommendations_df %>% 
+        acc_upload <-
+        recommendations_detailed %>% 
             filter(ACCOUNT_NO %in% acc_nums_upload) %>% 
             slice(1:input$recomm_limit) %>% 
             arrange(desc(max_rating),
                     desc(rating), 
-                    .by_group = TRUE) -> acc_upload
+                    .by_group = TRUE) %>% 
+            setNames(str_to_upper(colnames(.)))
         
         # Recommendations using uploaded product names
         user_choices_up <- cust_prods_upload
@@ -134,7 +139,8 @@ shinyServer(function(input, output, session) {
             relocate(BUSINESS_LINE, .after = PRODUCT) %>% 
             group_by(BUSINESS_LINE) %>% 
             arrange(desc(rating), .by_group = TRUE) %>% 
-            slice(1:input$recomm_limit)
+            slice(1:input$recomm_limit) %>% 
+            setNames(str_to_upper(colnames(.)))
         
         return(list(recommendations_acc=acc_upload, 
                     recommendations_prod=prod_upload,
@@ -147,48 +153,86 @@ shinyServer(function(input, output, session) {
 ##=======OUTPUTS==============
     
     # #Scenario 1 output
-    output$customer_recomms <- renderDataTable(rownames = FALSE,
+    output$customer_recomms <- renderDataTable(server = FALSE,
+                                               rownames = FALSE,
                                                extensions = "Buttons",
                                                options = list(dom = "Bfrtip",
-                                                              buttons = c("excel")), {
+                                                              buttons = "excel",
+                                                              columnDefs = list(list(visible=FALSE, targets=c(5))),
+                                                              rowCallback = JS(
+                                                                  "function(row, data) {",
+                                                                  "var full_text = 'Customer details: ' + data[5]",
+                                                                  "$('td', row).attr('title', full_text);",
+                                                                  "}"
+                                                              )), {
         dfScenario1()$recommendations
     })
     
     #Scenario 2 output
-    output$target_list <- renderDataTable(rownames = FALSE,
+    output$target_list <- renderDataTable(server = FALSE,
+                                          rownames = FALSE,
                                           extensions = "Buttons",
                                           options = list(dom = "Bfrtip",
-                                                         buttons = c("excel")),
+                                                         buttons = "excel",
+                                                         columnDefs = list(list(visible=FALSE, targets=c(5))),
+                                                         rowCallback = JS(
+                                                             "function(row, data) {",
+                                                             "var full_text = 'Customer details: ' + data[5]",
+                                                             "$('td', row).attr('title', full_text);",
+                                                             "}"
+                                                         )),
                                           
-                                          recommendations_df_sample %>% 
+                                          recommendations_detailed %>% 
+                                              head(500) %>% 
                                               arrange(desc(max_rating), 
                                                       desc(rating), 
                                                       .by_group = TRUE) %>%
-                                              slice(1:input$recomm_limit))
+                                              slice(1:input$recomm_limit) %>% 
+                                              setNames(str_to_upper(colnames(.))))
     
-    #Scenario 3
-    output$chosen_recomms <- renderDataTable(rownames = FALSE,
+    #Scenario 3 output
+    output$chosen_recomms <- renderDataTable(server = FALSE,
+                                             rownames = FALSE,
                                              extensions = "Buttons",
                                              options = list(dom = "Bfrtip",
-                                                            buttons = c("excel")), {
+                                                            buttons = "excel"), {
         dfScenario3()$recommendations
     })
     
     #Scenario 4 output
-    output$popular_products <- renderDT(rownames = FALSE,
-                                               extensions = "Buttons",
-                                               options = list(dom = "Bfrtip",
-                                                              buttons = c("excel")),
+    output$popular_products <- renderDT(server = FALSE,
+                                        rownames = FALSE,
+                                        extensions = "Buttons",
+                                        options = list(dom = "Bfrtip",
+                                                       buttons = "excel"),
                                                
-                                               popular_products %>% 
-                                                   slice(1:input$recomm_limit))
+                                       popular_products %>% 
+                                           slice(1:input$recomm_limit) %>% 
+                                           rename(purchases = n) %>% 
+                                           setNames(str_to_upper(colnames(.))))
     
     #Scenario 5 output
-    output$accounts_upload <- renderDataTable({
+    output$accounts_upload <- renderDataTable(server = FALSE,
+                                              rownames = FALSE, 
+                                              extensions = "Buttons",
+                                              options = list(dom = "Bfrtip",
+                                                             buttons = "excel",
+                                                             columnDefs = list(list(visible=FALSE, targets=c(5))),
+                                                             rowCallback = JS(
+                                                  "function(row, data) {",
+                                                  "var full_text = 'Customer details: ' + data[5]",
+                                                  "$('td', row).attr('title', full_text);",
+                                                  "}"
+                                                  )), {
         dfScenario5()$recommendations_acc
     })
     
-    output$products_upload <- renderDataTable({
+    #Bulk upload output
+    output$products_upload <- renderDataTable(server = FALSE,
+                                              rownames = FALSE,
+                                              extensions = "Buttons",
+                                              options = list(dom = "Bfrtip",
+                                                             buttons = "excel"),{
         dfScenario5()$recommendations_prod
     })
     
