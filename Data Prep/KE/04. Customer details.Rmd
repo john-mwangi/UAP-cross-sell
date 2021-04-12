@@ -1,0 +1,402 @@
+---
+title: "Customer details"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+library(recommenderlab)
+library(glue)
+library(data.table)
+library(tidyverse)
+```
+
+# CUSTOMER DETAILS
+
+In this markdown we want to match `ACCOUNT_NO` in the `products_rating_matrix.rds` to customer details:
+* Customer name
+* Contact details
+* Products held
+* Tenure
+* Intermediary Code
+
+### Customer attributes
+
+The following attributes will be required from the customer master files.
+
+```{r}
+c("ACCOUNT_NO",
+  "PRODUCT",
+  "TITLE",
+  "FULL_NAMES",
+  "TELEPHONE_NUMBER",
+  "MOBILE_NUMBER",
+  "GENDER",
+  "PRIMARY_EMAIL",
+  "POSTAL_ADDRESS",
+  "POSTAL_CODE",
+  "POSTAL_CITY") -> customer_attributes
+```
+
+# PRODUCT INFO.
+
+Account Numbers tied to products
+
+```{r}
+products_rating_matrix <- readRDS("./products_rating_matrix.rds")
+
+customer_products <- as(products_rating_matrix, "data.frame") %>% 
+  rename(ACCOUNT_NO = user,
+         PRODUCT = item)
+
+head(customer_products)
+```
+
+Product business lines
+
+```{r}
+product_businesslines <- readRDS(file = "../../Models/KE/product_businesslines.rds")
+```
+
+
+# ASSET MGT
+
+## Asset mgt accounts
+
+
+```{r}
+asset_mgt_accounts <- 
+customer_products %>% 
+  left_join(product_businesslines, by = "PRODUCT") %>% 
+  filter(BUSINESS_LINE == "Asset Management")
+
+head(asset_mgt_accounts)
+```
+
+## Accounts <=> Products
+
+```{r}
+asset_product_info <-
+asset_mgt_accounts %>% 
+  group_by(ACCOUNT_NO) %>% 
+  mutate(product_count = n_distinct(PRODUCT),
+         products = paste0(PRODUCT, collapse = ", ")) %>% 
+  select(ACCOUNT_NO, products, product_count) %>% 
+  slice(1)
+
+head(asset_product_info)
+```
+
+Asset Management data
+
+```{r}
+# Customer name, contact details
+asset_customer_master <- read_csv(file = "../../../../C - Documentation/Data/festus_extraction/kenya/asset_mgt/Customer Dataset.csv")
+
+# Products held
+products_rating_matrix
+
+# Tenure
+# No information on joining date
+
+# Intermediary code
+asset_agents_master <- read_csv("../../../../C - Documentation/Data/festus_extraction/kenya/asset_mgt/Agent Dataset.csv")
+```
+
+
+## Accounts <=> Customer Details
+
+```{r}
+head(asset_customer_master)
+```
+
+
+Check number of records in common in the two files.
+
+```{r}
+length(intersect(x = asset_mgt_accounts$ACCOUNT_NO, 
+                 y = asset_customer_master$ACCOUNT_NO))
+```
+
+
+```{r}
+asset_customer_info <-
+asset_mgt_accounts %>% 
+  left_join(asset_customer_master, by = "ACCOUNT_NO") %>% 
+  select(all_of(customer_attributes)) %>% 
+  distinct(ACCOUNT_NO, .keep_all = TRUE) %>% 
+  select(-PRODUCT)
+
+dim(asset_customer_info)
+head(asset_customer_info)
+```
+
+
+## Accounts <=> Agent
+
+```{r}
+asset_acc_intermediary <- read_csv("../../../../C - Documentation/Data/festus_extraction/kenya/asset_mgt/Investment Account Dataset.csv") %>% 
+  mutate(ACCOUNT_NO = as.character(ACCOUNT_NO))
+
+head(asset_acc_intermediary)
+```
+
+
+```{r}
+asset_agent_info <-
+asset_acc_intermediary %>% 
+  select(ACCOUNT_NO,INTERMEDIARY_CODE) %>% 
+  distinct(ACCOUNT_NO, .keep_all = TRUE)
+
+head(asset_agent_info)
+```
+
+
+## Asset customer details
+
+
+```{r}
+asset_customer_details <-
+asset_mgt_accounts %>%
+  left_join(asset_customer_info, by = "ACCOUNT_NO") %>%
+  left_join(asset_agent_info, by = "ACCOUNT_NO") %>% 
+  left_join(asset_product_info, by = "ACCOUNT_NO") %>% 
+  distinct(ACCOUNT_NO, .keep_all = TRUE)
+
+dim(asset_customer_details)
+head(asset_customer_details)
+```
+
+## Sense check
+
+We want to see one Account Number and all it's products and customer details under it.
+
+```{r}
+asset_customer_details %>% 
+  count(ACCOUNT_NO, sort = TRUE)
+```
+
+
+## Convert to single column
+
+```{r}
+asset_customer_details_final <-
+asset_customer_details %>% 
+  mutate(customer_details = glue("Names:{FULL_NAMES}
+                                 Agent Code:{INTERMEDIARY_CODE}
+                                 Product Holding:{product_count}
+                                 Current Products:{products}
+                                 Tel No:{TELEPHONE_NUMBER}
+                                 Email:{PRIMARY_EMAIL}", 
+                                 .na = "Not Found")) %>% 
+  select(ACCOUNT_NO, customer_details)
+
+
+dim(asset_customer_details_final)
+head(asset_customer_details_final)
+```
+
+
+# HEALTH INSURANCE
+
+## Health insurance accounts
+
+Health product holding.
+
+```{r}
+health_accounts <-
+customer_products %>% 
+  left_join(product_businesslines, by = "PRODUCT") %>% 
+  filter(BUSINESS_LINE == "Health")
+
+head(health_accounts)
+```
+
+## Account <=> Products
+
+```{r}
+health_product_info <-
+health_accounts %>%
+  select(ACCOUNT_NO, PRODUCT) %>% 
+  group_by(ACCOUNT_NO) %>% 
+  mutate(product_count = n_distinct(ACCOUNT_NO),
+         products = paste0(PRODUCT, collapse = ", ")) %>% 
+  slice(1) %>% 
+  select(-PRODUCT)
+
+head(health_product_info)
+```
+
+## Accounts <=> Customer details
+
+Health customer master file.
+
+```{r}
+health_customers <- vroom::vroom("../../../../C - Documentation/Data/festus_extraction/kenya/health/health_customer_kenya.csv")
+```
+
+Health insurance products.
+
+```{r}
+health_acc_products <- vroom::vroom("../../../../C - Documentation/Data/festus_extraction/kenya/health/policyheader_nonlife_kenya_product_names-HEALTH.csv") %>% 
+  select(ACCOUNT_NO,MEMBER_NO)
+```
+
+The `PRI_ACCOUNT_NO` in the customer master file should be joined to the `MEMBER_NO` in the file containing health insurance products.
+
+```{r}
+head(health_customers)
+```
+
+Check how many records are common in the two files.
+
+```{r}
+length(intersect(x = health_acc_products$MEMBER_NO, 
+                 y = health_customers$PRI_ACCOUNT_NO))
+```
+
+Match customer details to product information.
+
+```{r}
+health_customer_info <-
+health_acc_products %>% 
+  left_join(health_customers, by = c("MEMBER_NO"="PRI_ACCOUNT_NO")) %>% 
+  rename(ACCOUNT_NO = ACCOUNT_NO.x) %>% 
+  select(any_of(x = customer_attributes)) %>% 
+  mutate(ACCOUNT_NO = as.character(ACCOUNT_NO))%>% 
+  group_by(ACCOUNT_NO) %>% 
+  slice(1) %>% 
+  ungroup()
+
+dim(health_customer_info)
+head(health_customer_info)
+```
+
+
+## Accounts <=> Agent
+
+This file links Account Numbers to Intermediary Codes
+
+```{r}
+health_agents <- vroom::vroom(file = "../../../../C - Documentation/Data/festus_extraction/kenya/health/policydetails_health_kenya.csv") %>% 
+  select(ACCOUNT_NO, AGENT_CODE) %>% 
+  mutate(ACCOUNT_NO = as.character(ACCOUNT_NO))
+```
+
+We check if we can join this file to the main Product Account file.
+
+```{r}
+length(intersect(x = health_accounts$ACCOUNT_NO, 
+                 y = health_agents$ACCOUNT_NO))
+```
+
+Join Health Account to Agents
+
+```{r}
+health_agent_info <-
+health_accounts %>% 
+  left_join(health_agents) %>% 
+  select(ACCOUNT_NO, AGENT_CODE) %>% 
+  distinct(ACCOUNT_NO, .keep_all = TRUE)
+
+head(health_agent_info)
+```
+
+## Health customer details
+
+```{r}
+health_customer_details <-
+health_accounts %>% 
+  select(ACCOUNT_NO) %>% 
+  # Add Agent code
+  left_join(health_agent_info, by = "ACCOUNT_NO") %>% 
+  # Add Product info
+  left_join(health_product_info, by = "ACCOUNT_NO") %>% 
+  # Add Customer info
+  left_join(health_customer_info, by = "ACCOUNT_NO")
+
+dim(health_customer_details)
+head(health_customer_details)
+```
+
+## Single column
+
+```{r}
+health_customer_details_final <-
+health_customer_details %>% 
+  mutate(customer_details = glue("Names:{FULL_NAMES}
+                                 Agent Code:{AGENT_CODE}
+                                 Product Holding:{product_count}
+                                 Current Product:{products}
+                                 Tel No:{TELEPHONE_NUMBER}
+                                 Email:{PRIMARY_EMAIL}", 
+                                 .na = "Not Found")) %>% 
+  select(ACCOUNT_NO, customer_details) %>% 
+  distinct(ACCOUNT_NO, .keep_all = TRUE)
+
+dim(health_customer_details_final)
+head(health_customer_details_final)
+```
+Sense check
+
+```{r}
+health_customer_details_final %>% 
+  count(ACCOUNT_NO, sort = TRUE)
+
+
+health_customer_details_final %>% 
+  filter(ACCOUNT_NO=="420754")
+```
+
+# ALL CUSTOMERS INFO
+
+## All customer details
+
+```{r}
+customer_details <-
+bind_rows(
+  asset_customer_details_final,
+  health_customer_details_final
+)
+
+dim(customer_details)
+head(customer_details)
+```
+
+## Merge with recommendations
+
+We add these details to the dataframe containing product recommendation ratings.
+
+```{r}
+recommendations_df <- readRDS(file = "../../../../D - Working Papers/UAP-cross-sell/Models/KE/recommendations_df.rds")
+```
+
+
+```{r}
+recommendations_detailed <-
+recommendations_df %>%
+  left_join(customer_details, by = "ACCOUNT_NO")
+
+
+dim(recommendations_detailed)
+head(recommendations_detailed)
+```
+
+# EXPORT
+
+```{r}
+# Project image
+save.image("./12Apr_Customer_details.RData")
+
+# Recommendations
+saveRDS(object = recommendations_detailed, file = "./recommendations_detailed.rds")
+
+#load("./08Apr_Customer_details.RData")
+```
+
+
+
