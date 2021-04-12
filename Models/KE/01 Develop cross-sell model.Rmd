@@ -846,6 +846,9 @@ saveRDS(object = recommendations_df,
 # Popular products
 saveRDS(object = popular_products, file = "./popular_products.rds")
 
+# Product business lines
+saveRDS(object = product_businesslines, file = "./product_businesslines.rds")
+
 # Project image
 save.image(file = "./07Apr_Models.RData")
 load("./07Apr_Models.RData")
