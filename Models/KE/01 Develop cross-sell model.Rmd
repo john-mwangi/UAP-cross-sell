@@ -582,19 +582,53 @@ You want to sort all customers across the group according to who's most likely t
 
 Due to performance challenges, only the top 500 records will be displayed while remaining dataset can be availed as a link for downloading.
 
-```{r}
-# Sample of 500 records for display
-recommendations_df_sample <-
-recommendations_df %>% 
-  arrange(desc(max_rating), 
-          desc(rating), 
-          .by_group = TRUE) %>%
-  #slice(1:3) %>% 
-  head(500)
+We allow the end-user get the top n recommended customers based on this criteria:
+* Rank e.g. 1-10
+* Intermediated - Yes/No
+* Ownership - business line that owns the customer
+* Product value - a range
 
-dim(recommendations_df_sample)
-head(recommendations_df_sample)
+Create a random sample of intermediated and unintermediated customers.
+
+### Non intermediated customers
+
+```{r}
+recommendations_detailed %>% 
+  ungroup() %>% 
+  count(intermediated, ownership)
 ```
+
+```{r}
+non_intermediated_customers <-
+recommendations_detailed %>% 
+  filter(intermediated=="No")
+```
+
+### Customer sample
+
+```{r}
+
+recommendations_detailed_sample <-
+recommendations_detailed %>% 
+  arrange(desc(max_rating)) %>% 
+  head(500) %>% 
+  bind_rows(non_intermediated_customers)
+
+recommendations_detailed_sample
+```
+
+
+```{r}
+recommendations_detailed_sample %>%
+  arrange(desc(max_rating),
+          desc(rating),
+          .by_group = TRUE) %>% 
+  slice(1:3) %>% 
+  filter(intermediated=="No") %>% 
+  filter(ownership=="Health") %>% 
+  filter(product_value>=100000 & product_value<=200000)
+```
+
 
 ```{r}
 # Full records as a spreadsheet file
@@ -606,7 +640,6 @@ recommendations_df %>%
   write_csv(file = "./recommendations_df.csv")
 
 ```
-
 
 
 ## Scenario 3
@@ -725,9 +758,17 @@ tibble(colnames(products_rating_matrix)) %>% write_csv("./valid_product_names.cs
 
 
 ```{r}
-acc_nums_upload <- readxl::read_excel("./cs_upload_template.xlsx", sheet = "customer_acc") %>% pull(ACCOUNT_NO)
+acc_nums_upload <- 
+  readxl::read_excel(path = "./cs_upload_template.xlsx",
+                     sheet = "customer_acc") %>% 
+  distinct(ACCOUNT_NO) %>% 
+  pull(ACCOUNT_NO)
 
-cust_prods_upload <- readxl::read_excel("./cs_upload_template.xlsx", sheet = "customer_prod") %>% pull(PRODUCT)
+cust_prods_upload <- 
+  readxl::read_excel(path = "./cs_upload_template.xlsx", 
+                     sheet = "customer_prod") %>% 
+  distinct(PRODUCT) %>% 
+  pull(PRODUCT)
 ```
 
 ### Customer numbers
@@ -849,9 +890,17 @@ saveRDS(object = popular_products, file = "./popular_products.rds")
 # Product business lines
 saveRDS(object = product_businesslines, file = "./product_businesslines.rds")
 
+# Sample of customers to display
+saveRDS(object = recommendations_detailed_sample, 
+        file = "./recommendations_detailed_sample.rds")
+
 # Project image
-save.image(file = "./07Apr_Models.RData")
+save.image(file = "./15Apr_Models.RData")
+
+# Image containing trained model
 load("./07Apr_Models.RData")
+
+getwd()
 ```
 
 
