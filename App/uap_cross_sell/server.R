@@ -1,5 +1,6 @@
 load("07Apr_Models.RData")
 recommendations_detailed <- readRDS("recommendations_detailed.rds")
+recommendations_detailed_sample <- readRDS("recommendations_detailed_sample.rds")
 
 library(shiny)
 library(recommenderlab)
@@ -21,6 +22,8 @@ shinyServer(function(input, output, session) {
             arrange(desc(rating)) %>%
             slice(1:input$recomm_limit) %>%
             arrange(desc(max_rating)) %>% 
+            rename(inter = intermediated,
+                   value = product_value) %>% 
             setNames(str_to_upper(colnames(.)))
 
         return(list(recommendations=chosen_customers))
@@ -89,10 +92,14 @@ shinyServer(function(input, output, session) {
         validate(need(ext == "xlsx", "Please use the provided Excel (.xlsx) template"))
         
         acc_nums_upload <- readxl::read_excel(path = input$data_upload$datapath,
-                                              sheet = "customer_acc") %>% pull(ACCOUNT_NO)
+                                              sheet = "customer_acc") %>% 
+                                    distinct(ACCOUNT_NO) %>% 
+                                    pull(ACCOUNT_NO)
         
         cust_prods_upload <- readxl::read_excel(path = input$data_upload$datapath, 
-                                                sheet = "customer_prod") %>% pull(PRODUCT)
+                                                sheet = "customer_prod") %>% 
+                                    distinct(PRODUCT) %>% 
+                                    pull(PRODUCT)
         
         # Recommendations using uploaded customer numbers
         acc_upload <-
@@ -102,6 +109,8 @@ shinyServer(function(input, output, session) {
             arrange(desc(max_rating),
                     desc(rating), 
                     .by_group = TRUE) %>% 
+            rename(inter = intermediated,
+                   value = product_value) %>% 
             setNames(str_to_upper(colnames(.)))
         
         # Recommendations using uploaded product names
@@ -158,10 +167,10 @@ shinyServer(function(input, output, session) {
                                                extensions = "Buttons",
                                                options = list(dom = "Bfrtip",
                                                               buttons = "excel",
-                                                              columnDefs = list(list(visible=FALSE, targets=c(5))),
+                                                              columnDefs = list(list(visible=FALSE, targets=c(-1))),
                                                               rowCallback = JS(
                                                                   "function(row, data) {",
-                                                                  "var full_text = 'Customer details: ' + data[5]",
+                                                                  "var full_text = 'Customer details: ' + data[8]",
                                                                   "$('td', row).attr('title', full_text);",
                                                                   "}"
                                                               )), {
@@ -174,20 +183,25 @@ shinyServer(function(input, output, session) {
                                           extensions = "Buttons",
                                           options = list(dom = "Bfrtip",
                                                          buttons = "excel",
-                                                         columnDefs = list(list(visible=FALSE, targets=c(5))),
+                                                         columnDefs = list(list(visible=FALSE, targets=c(-1))),
                                                          rowCallback = JS(
                                                              "function(row, data) {",
-                                                             "var full_text = 'Customer details: ' + data[5]",
+                                                             "var full_text = 'Customer details: ' + data[8]",
                                                              "$('td', row).attr('title', full_text);",
                                                              "}"
                                                          )),
                                           
-                                          recommendations_detailed %>% 
-                                              head(500) %>% 
-                                              arrange(desc(max_rating), 
-                                                      desc(rating), 
-                                                      .by_group = TRUE) %>%
+                                          recommendations_detailed_sample %>%
+                                              arrange(desc(max_rating),
+                                                      desc(rating),
+                                                      .by_group = TRUE) %>% 
                                               slice(1:input$recomm_limit) %>% 
+                                              filter(intermediated==input$intermediated) %>% 
+                                              filter(ownership==input$ownership) %>% 
+                                              filter(product_value>=input$min_prod_value & 
+                                                         product_value<=input$max_prod_value) %>% 
+                                              rename(inter = intermediated,
+                                                     value = product_value) %>% 
                                               setNames(str_to_upper(colnames(.))))
     
     #Scenario 3 output
@@ -217,10 +231,10 @@ shinyServer(function(input, output, session) {
                                               extensions = "Buttons",
                                               options = list(dom = "Bfrtip",
                                                              buttons = "excel",
-                                                             columnDefs = list(list(visible=FALSE, targets=c(5))),
+                                                             columnDefs = list(list(visible=FALSE, targets=c(-1))),
                                                              rowCallback = JS(
                                                   "function(row, data) {",
-                                                  "var full_text = 'Customer details: ' + data[5]",
+                                                  "var full_text = 'Customer details: ' + data[8]",
                                                   "$('td', row).attr('title', full_text);",
                                                   "}"
                                                   )), {
