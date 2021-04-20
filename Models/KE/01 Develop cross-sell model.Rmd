@@ -7,8 +7,12 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r}
+# PACKAGES
+
+```{r message=FALSE, warning=FALSE}
 library(recommenderlab)
+library(DBI)
+library(RSQLite)
 library(tidyverse)
 ```
 
@@ -557,6 +561,41 @@ This format removes the groups.
 ```
 
 
+# CREATE DATABASE
+
+Create sqlite3 database to hold and query records. One country, one database, many tables.
+
+## Database Connection
+
+```{r}
+sqlite_path <- "../../App/uap_cross_sell/db/ke_cs.db"
+```
+
+
+```{r}
+con <- dbConnect(drv = SQLite(), sqlite_path)
+```
+
+Create database tables of required data.
+
+```{r}
+copy_to(dest = con, df = recommendations_detailed, overwrite = TRUE, temporary = FALSE)
+
+copy_to(dest = con, 
+        df = recommendations_detailed_sample, 
+        overwrite = TRUE, 
+        temporary = FALSE)
+```
+
+Confirm dataframes have been created as database tables
+
+```{r}
+dbListTables(conn = con)
+
+tbl(src = con, "recommendations_detailed_sample")
+```
+
+
 # PREDICTIONS
 
 ## Scenario 1
@@ -564,17 +603,33 @@ This format removes the groups.
 Where you have a customer account number and want to 3 products per business line.
 
 ```{r}
-#sample_cust_num <- sample(recommendations_df$ACCOUNT_NO, 2)
+sample_cust_num <- paste0(rownames(products_rating_matrix)[1:2], collapse =",")
 
-sample_cust_num <- paste0(rownames(products_rating_matrix)[1:2], collapse = ",")
 records <- strsplit(x = sample_cust_num, split = ",")[[1]]
 
-recommendations_df %>% 
+records
+```
+
+```{r}
+recommendations_detailed %>% 
   filter(ACCOUNT_NO %in% records) %>%
   arrange(desc(rating)) %>% 
   slice(1:3) %>% 
   arrange(desc(max_rating))
 ```
+
+Database replication of the above results.
+
+```{r}
+tbl(src = con, "recommendations_detailed") %>%
+  filter(ACCOUNT_NO %in% records) %>%
+  group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
+  arrange(desc(rating)) %>% 
+  collect() %>% 
+  slice(1:3) %>% 
+  arrange(desc(max_rating))
+```
+
 
 ## Scenario 2
 
@@ -588,7 +643,7 @@ We allow the end-user get the top n recommended customers based on this criteria
 * Ownership - business line that owns the customer
 * Product value - a range
 
-Create a random sample of intermediated and unintermediated customers.
+Create a sample of intermediated and unintermediated customers.
 
 ### Non intermediated customers
 
@@ -614,31 +669,52 @@ recommendations_detailed %>%
   head(500) %>% 
   bind_rows(non_intermediated_customers)
 
+recommendations_detailed_sample <-
+recommendations_detailed_sample %>% 
+  filter(ACCOUNT_NO !="NULL")
+
 recommendations_detailed_sample
 ```
 
+Obtain a recommendations of non-intermediated customers with 3 recommended products per business line belonging to Health insurance that can purchase a product that's worth between 100K and 200K.
 
 ```{r}
 recommendations_detailed_sample %>%
   arrange(desc(max_rating),
           desc(rating),
-          .by_group = TRUE) %>% 
-  slice(1:3) %>% 
+          .by_group = TRUE) %>%
   filter(intermediated=="No") %>% 
   filter(ownership=="Health") %>% 
-  filter(product_value>=100000 & product_value<=200000)
+  filter(product_value>=100000 & product_value<=200000) %>% 
+  slice(1:3)
 ```
 
+Database replication of the above results.
+
+```{r}
+tbl(src = con, "recommendations_detailed_sample") %>% 
+  group_by(ACCOUNT_NO, BUSINESS_LINE) %>%
+  filter(intermediated=="No") %>% 
+  filter(ownership=="Health") %>% 
+  filter(product_value>=100000 & product_value<=200000) %>% 
+  arrange(desc(max_rating),
+          desc(rating),
+          .by_group = TRUE) %>% 
+  collect() %>% 
+  slice(1:3)
+```
+
+### For download
 
 ```{r}
 # Full records as a spreadsheet file
-recommendations_df %>% 
+recommendations_detailed %>% 
+  select(-customer_details) %>% 
+  filter(ACCOUNT_NO != "NULL") %>% 
   arrange(desc(max_rating), 
           desc(rating), 
           .by_group = TRUE) %>%
-  #slice(1:3) %>% 
-  write_csv(file = "./recommendations_df.csv")
-
+  write_csv(file = "../../App/uap_cross_sell/www/files/recommendations_df.csv")
 ```
 
 
@@ -744,8 +820,26 @@ as(products_rating_matrix, "data.frame") %>%
   group_by(BUSINESS_LINE) %>% 
   arrange(desc(n), .by_group = TRUE)
 
-popular_products
+popular_products %>% 
+  slice(1:3)
 ```
+
+Put the results in their own table in the database
+
+```{r}
+copy_to(dest = con, df = popular_products, overwrite = TRUE, temporary = FALSE)
+
+dbListTables(conn = con)
+```
+Replicate the above results in SQL
+
+```{r}
+tbl(src = con, "popular_products") %>% 
+  collect() %>% 
+  group_by(BUSINESS_LINE) %>% 
+  slice(1:3)
+```
+
 
 
 ## Scenario 5
@@ -762,6 +856,7 @@ acc_nums_upload <-
   readxl::read_excel(path = "./cs_upload_template.xlsx",
                      sheet = "customer_acc") %>% 
   distinct(ACCOUNT_NO) %>% 
+  mutate(ACCOUNT_NO = as.character(ACCOUNT_NO)) %>% 
   pull(ACCOUNT_NO)
 
 cust_prods_upload <- 
@@ -776,13 +871,28 @@ cust_prods_upload <-
 Recommendations for customer numbers provided.
 
 ```{r}
-recommendations_df %>% 
+recommendations_detailed %>% 
   filter(ACCOUNT_NO %in% acc_nums_upload) %>% 
-  slice(1:3) %>% 
   arrange(desc(max_rating),
           desc(rating), 
-          .by_group = TRUE)
+          .by_group = TRUE) %>% 
+  slice(1:3)
 ```
+
+Replicate the above results in SQL
+
+```{r}
+tbl(src = con, "recommendations_detailed") %>%
+  filter(ACCOUNT_NO %in% acc_nums_upload) %>%
+  group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
+  arrange(desc(rating)) %>% 
+  collect() %>% 
+  slice(1:3) %>% 
+  arrange(desc(max_rating))
+```
+
+
+
 
 ### Customer products
 
@@ -861,12 +971,27 @@ as(user_choice_recommendations, "data.frame") %>%
 ```
 
 
+```{r}
+system.time(
+tbl(src = con, "recommendations_detailed") %>% 
+  distinct(ownership) %>% 
+  pull(ownership)
+)
+```
+
+```{r}
+system.time(
+  unique(recommendations_detailed$ownership)
+)
+```
+
+
 # LIMITATIONS
 
 1. Product holding is per customer is 1 implying there is no cross-selling happening. This makes it harder to identify cross-selling trends.
 2. Assumption: 1 account number, 1 customer.
 
-# EXPORT
+# EXPORTS
 
 ```{r}
 # Models
@@ -894,11 +1019,20 @@ saveRDS(object = product_businesslines, file = "./product_businesslines.rds")
 saveRDS(object = recommendations_detailed_sample, 
         file = "./recommendations_detailed_sample.rds")
 
+# Ojects for deployment
+saveRDS(object = products_rating_matrix, file = "../../App/uap_cross_sell/objects/products_rating_matrix.rds")
+
+saveRDS(object = ke_pop, file = "../../App/uap_cross_sell/objects/ke_pop.rds")
+
+saveRDS(object = product_businesslines, file = "../../App/uap_cross_sell/objects/product_businesslines.rds")
+
+saveRDS(object = unique(recommendations_detailed$ownership), file = "../../App/uap_cross_sell/objects/ownership.rds")
+
 # Project image
-save.image(file = "./15Apr_Models.RData")
+save.image(file = "./19Apr_Models.RData")
 
 # Image containing trained model
-load("./07Apr_Models.RData")
+load("./19Apr_Models.RData")
 
 getwd()
 ```

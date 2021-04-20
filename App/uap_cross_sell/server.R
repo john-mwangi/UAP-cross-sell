@@ -1,14 +1,16 @@
-load("07Apr_Models.RData")
-recommendations_detailed <- readRDS("recommendations_detailed.rds")
-recommendations_detailed_sample <- readRDS("recommendations_detailed_sample.rds")
+product_businesslines <- readRDS("./objects/product_businesslines.rds")
+products_rating_matrix <- readRDS("./objects/products_rating_matrix.rds")
 
 library(shiny)
 library(recommenderlab)
 library(DT)
+library(DBI)
+library(RSQLite)
 library(tidyverse)
 
-
 shinyServer(function(input, output, session) {
+  
+  ##======== FIREBASE AUTHENTICATION============
 
   ##### Switch Views ------------------
   # if user click link to register, go to register view
@@ -90,16 +92,27 @@ shinyServer(function(input, output, session) {
     )
   })
   
-  ### UAP
+  
+  
+  ##====== Create db connection as soon as user logs in successfully
+  sqlite_path <- "./db/ke_cs.db"
+  con <- dbConnect(drv = SQLite(), sqlite_path)
+  
+  
+  
+  ###============== REACTIVES========
   
   dfScenario1 = reactive({
     
     records <- strsplit(x = input$customer_ids, split = ",")[[1]]
     
-    chosen_customers <- recommendations_detailed %>%
+    chosen_customers <-
+    tbl(src = con, "recommendations_detailed") %>%
       filter(ACCOUNT_NO %in% records) %>%
-      arrange(desc(rating)) %>%
-      slice(1:input$recomm_limit) %>%
+      group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
+      arrange(desc(rating)) %>% 
+      collect() %>% 
+      slice(1:input$recomm_limit) %>% 
       arrange(desc(max_rating)) %>% 
       rename(inter = intermediated,
              value = product_value) %>% 
@@ -141,6 +154,7 @@ shinyServer(function(input, output, session) {
       user_choices_ratmat <- as(user_choices_mat,"binaryRatingMatrix")
       
       #Recommend products
+      ke_pop <- readRDS("./objects/ke_pop.rds")
       user_choice_recommendations <- predict(object = ke_pop, 
                                              newdata = user_choices_ratmat, 
                                              type="ratings")
@@ -173,6 +187,7 @@ shinyServer(function(input, output, session) {
     acc_nums_upload <- readxl::read_excel(path = input$data_upload$datapath,
                                           sheet = "customer_acc") %>% 
       distinct(ACCOUNT_NO) %>% 
+      mutate(ACCOUNT_NO = as.character(ACCOUNT_NO)) %>% 
       pull(ACCOUNT_NO)
     
     cust_prods_upload <- readxl::read_excel(path = input$data_upload$datapath, 
@@ -182,12 +197,13 @@ shinyServer(function(input, output, session) {
     
     # Recommendations using uploaded customer numbers
     acc_upload <-
-      recommendations_detailed %>% 
-      filter(ACCOUNT_NO %in% acc_nums_upload) %>% 
+    tbl(src = con, "recommendations_detailed") %>%
+      filter(ACCOUNT_NO %in% acc_nums_upload) %>%
+      group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
+      arrange(desc(rating)) %>% 
+      collect() %>% 
       slice(1:input$recomm_limit) %>% 
-      arrange(desc(max_rating),
-              desc(rating), 
-              .by_group = TRUE) %>% 
+      arrange(desc(max_rating)) %>% 
       rename(inter = intermediated,
              value = product_value) %>% 
       setNames(str_to_upper(colnames(.)))
@@ -216,6 +232,7 @@ shinyServer(function(input, output, session) {
     
     user_choices_ratmat_up <- as(user_choices_mat_up,"binaryRatingMatrix")
     
+    ke_pop <- readRDS("./objects/ke_pop.rds")
     user_choice_recommendations_up <- 
       predict(object = ke_pop, 
               newdata = user_choices_ratmat_up, 
@@ -270,18 +287,22 @@ shinyServer(function(input, output, session) {
                                                          "}"
                                                        )),
                                         
-                                        recommendations_detailed_sample %>%
+                                        
+                                        tbl(src = con, "recommendations_detailed_sample") %>% 
+                                          group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
+                                          filter(intermediated==!!input$intermediated) %>% 
+                                          filter(ownership==!!input$ownership) %>% 
+                                          filter(product_value>=!!input$min_prod_value & 
+                                                 product_value<=!!input$max_prod_value) %>%
                                           arrange(desc(max_rating),
                                                   desc(rating),
-                                                  .by_group = TRUE) %>% 
-                                          slice(1:input$recomm_limit) %>% 
-                                          filter(intermediated==input$intermediated) %>% 
-                                          filter(ownership==input$ownership) %>% 
-                                          filter(product_value>=input$min_prod_value & 
-                                                   product_value<=input$max_prod_value) %>% 
+                                                  .by_group = TRUE) %>%
+                                          collect() %>% 
+                                          slice(1:input$recomm_limit)%>% 
                                           rename(inter = intermediated,
                                                  value = product_value) %>% 
-                                          setNames(str_to_upper(colnames(.))))
+                                          setNames(str_to_upper(colnames(.)))
+                                        )
   
   #Scenario 3 output
   output$chosen_recomms <- renderDataTable(server = FALSE,
@@ -299,10 +320,12 @@ shinyServer(function(input, output, session) {
                                       options = list(dom = "Bfrtip",
                                                      buttons = "excel"),
                                       
-                                      popular_products %>% 
+                                      tbl(src = con, "popular_products") %>% 
+                                        collect() %>% 
+                                        group_by(BUSINESS_LINE) %>% 
                                         slice(1:input$recomm_limit) %>% 
-                                        rename(purchases = n) %>% 
-                                        setNames(str_to_upper(colnames(.))))
+                                        rename(PURCHASES = n)
+                                      )
   
   #Scenario 5 output
   output$accounts_upload <- renderDataTable(server = FALSE,

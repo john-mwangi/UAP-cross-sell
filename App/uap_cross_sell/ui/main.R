@@ -1,14 +1,12 @@
-load("07Apr_Models.RData")
-recommendations_detailed <- readRDS("recommendations_detailed.rds")
-
+products_rating_matrix <- readRDS("./objects/products_rating_matrix.rds")
+ownership <- readRDS("./objects/ownership.rds")
 
 library(shiny)
-library(data.table)
 library(DT)
 
 fluidPage(
   
-  titlePanel(""),
+titlePanel(""),
   
 theme = bslib::bs_theme(version = 4, bootswatch = "minty"),
 
@@ -51,17 +49,15 @@ sidebarLayout(
                                         that you'd want to target and you have their account number."),
                              textInput(inputId = "customer_ids", 
                                        label = "Enter account numbers separated by commas",
-                                       value = paste0(rownames(products_rating_matrix)[1:2], 
-                                                      collapse = ",")),
+                                       value = "1337,1377"),
                              dataTableOutput(outputId = "customer_recomms")),
                     
                     tabPanel(title = "CUSTOMERS",
                              tags$p("Use this tab when you don't have a specific customer in mind but
-                                you want a list of customers who are most likely to make a purchase. If you
-                                have a specific account number in mind, you can as well search it here."),
+                                you want a list of customers who are most likely to make a purchase."),
                              tags$p("The table below displays only the first few records. Click the link below
                                        to download recommendations for all UAP-OM customers in Excel format."),
-                             tags$a(href="recommendations_df.csv", "Download all records!"),
+                             tags$a(href="files/recommendations_df.csv", "Download all records!"),
                              tags$p(),
                              fluidRow(width = 10,
                                       column(width = 3,
@@ -72,7 +68,7 @@ sidebarLayout(
                                       column(width = 3,
                                              selectInput(inputId = "ownership", 
                                                          label = "Select account ownership", 
-                                                         choices = unique(recommendations_detailed$ownership),
+                                                         choices = ownership,
                                                          multiple = FALSE)),
                                       column(width = 3,
                                              numericInput(inputId = "min_prod_value", 
@@ -106,7 +102,7 @@ sidebarLayout(
                              tags$p("Use this tab for obtaining product recommendations in bulk by providing
                                         customer account numbers or a list of products they hold or have expressed
                                         interest it. Use the template provided on the link below."),
-                             tags$a(href="cs_upload_template.xlsx", "Bulk upload template."),
+                             tags$a(href="files/cs_upload_template.xlsx", "Bulk upload template."),
                              fileInput(inputId = "data_upload", 
                                        label = "", 
                                        multiple = FALSE,
