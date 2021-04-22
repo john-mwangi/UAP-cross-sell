@@ -55,7 +55,8 @@ sidebarLayout(
                     tabPanel(title = "CUSTOMERS",
                              tags$p("Use this tab when you don't have a specific customer in mind but
                                 you want a list of customers who are most likely to make a purchase."),
-                             tags$p("Use the provided filters to refine your criteria."),
+                             tags$p("Use the provided filters to refine your criteria. Results are
+                                    limited to a maximum of 1000 records."),
                              tags$p(),
                              fluidRow(width = 10,
                                       column(width = 3,

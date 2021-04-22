@@ -287,7 +287,7 @@ shinyServer(function(input, output, session) {
                                                          "}"
                                                        )),
                                         
-                                        
+                                        # Limit to 1000 records due to performance
                                         tbl(src = con, "ke_recommendations_detailed") %>% 
                                           group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
                                           filter(intermediated==!!input$intermediated) %>% 
@@ -297,6 +297,7 @@ shinyServer(function(input, output, session) {
                                           arrange(desc(max_rating),
                                                   desc(rating),
                                                   .by_group = TRUE) %>%
+                                          head(1000) %>% 
                                           collect() %>% 
                                           slice(1:input$recomm_limit)%>% 
                                           rename(inter = intermediated,
