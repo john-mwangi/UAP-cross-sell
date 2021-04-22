@@ -8,11 +8,13 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 
-```{r}
+# PACKAGES
+
+```{r message=FALSE, warning=FALSE}
+library(readxl)
 library(data.table)
 library(tidyverse)
 ```
-
 
 # HEALTH PRODUCTS
 
@@ -252,9 +254,130 @@ Because the account numbers on the Customer Master are different from those that
 Full names is another possible unique identifier.
 
 
-# GENERAL INSURANCE PRODUCTS
+# GI PRODUCTS
 
-## Awaiting product names.
+Import everything as text.
+
+```{r}
+gi_products_1 <- read_xls(path = "../../../../C - Documentation/Data/festus_extraction/kenya/general/policyheader_nonlife_kenya.xls", sheet = 1, col_types = "text")
+
+gi_products_2 <- read_xls(path = "../../../../C - Documentation/Data/festus_extraction/kenya/general/policyheader_nonlife_kenya.xls", sheet = 2, col_types = "text")
+
+gi_products_3 <- read_xls(path = "../../../../C - Documentation/Data/festus_extraction/kenya/general/policyheader_nonlife_kenya.xls", sheet = 3, col_types = "text")
+
+gi_products_4 <- read_xls(path = "../../../../C - Documentation/Data/festus_extraction/kenya/general/policyheader_nonlife_kenya.xls", sheet = 4, col_types = "text")
+
+gi_products_5 <- read_xls(path = "../../../../C - Documentation/Data/festus_extraction/kenya/general/policyheader_nonlife_kenya.xls", sheet = 5, col_types = "text")
+
+gi_products_6 <- read_xls(path = "../../../../C - Documentation/Data/festus_extraction/kenya/general/policyheader_nonlife_kenya.xls", sheet = 6, col_types = "text")
+
+gi_products_7 <- read_xls(path = "../../../../C - Documentation/Data/festus_extraction/kenya/general/policyheader_nonlife_kenya.xls", sheet = 7, col_types = "text")
+```
+
+
+```{r}
+gi_products_raw <-
+bind_rows(gi_products_1, gi_products_2, gi_products_3, gi_products_4, gi_products_5, gi_products_6, gi_products_7) %>% 
+  as.data.table()
+
+class(gi_products_raw)
+dim(gi_products_raw)
+head(gi_products_raw)
+```
+
+Clean up the memory.
+
+```{r}
+rm(gi_products_1, gi_products_2, gi_products_3, gi_products_4, gi_products_5, gi_products_6, gi_products_7)
+```
+
+## Records to exclude
+
+Field of interest: Policy Type (product), Account Number (proxy for customer number)
+
+```{r}
+gi_products_raw %>% 
+  select(POLICY_TYPE, ACCOUNT_NO, ) %>% 
+  mutate(null = is.na(ACCOUNT_NO)) %>% 
+  count(null) %>% 
+  mutate(prop = n/sum(n))
+```
+
+Check the distribution of how products have been purchased. We exclude products that have been purchased less than 10 times.
+
+```{r}
+gi_products_raw %>% 
+  count(POLICY_TYPE) %>% 
+  summary()
+```
+
+```{r}
+insufficient_gi_purchases <-
+gi_products_raw %>% 
+  count(POLICY_TYPE) %>% 
+  filter(n<10) %>% 
+  pull(POLICY_TYPE)
+
+insufficient_gi_purchases
+```
+
+
+## Product Holding
+
+We exclude the following records:
+* Those without Account Numbers
+* Invalid account numbers (less than 4 characters in length)
+* Products purchased less than 10 times
+* Health products (health, medical)
+* Life products (Accident, Work, Maxpac, Wiba)
+
+```{r}
+gi_product_holding <-
+gi_products_raw %>% 
+  mutate(POLICY_TYPE = str_trim(POLICY_TYPE),
+         ACCOUNT_NO = str_trim(ACCOUNT_NO)) %>% 
+  filter(!is.na(ACCOUNT_NO)) %>%
+  filter(!str_length(ACCOUNT_NO) < 4) %>% 
+  filter(!POLICY_TYPE %in% insufficient_gi_purchases) %>% 
+  filter(!str_detect(string = POLICY_TYPE, pattern = "HEALTH")) %>% 
+  filter(!str_detect(string = POLICY_TYPE, pattern = "MEDICAL")) %>%
+  filter(!str_detect(string = POLICY_TYPE, pattern = "ACCIDENT")) %>%
+  filter(!str_detect(string = POLICY_TYPE, pattern = "WORK")) %>%
+  filter(!str_detect(string = POLICY_TYPE, pattern = "MAXPAC")) %>%
+  filter(!str_detect(string = POLICY_TYPE, pattern = "WIBA")) %>%
+  distinct(ACCOUNT_NO, POLICY_TYPE) %>% 
+  count(ACCOUNT_NO, POLICY_TYPE)
+
+dim(gi_product_holding)
+head(gi_product_holding)
+```
+
+Number of products
+
+```{r}
+length(unique(gi_product_holding$POLICY_TYPE))
+
+gi_product_holding %>% 
+  distinct(POLICY_TYPE)
+```
+
+Feedback obtained from Keldine regarding the products to keep or dispose from the model.
+
+```{r}
+gi_to_keep <- read_excel(path = "./gi_products_KM_Response.xlsx") %>% 
+  filter(`Keep/Rid`=="Keep") %>% 
+  pull(PRODUCT)
+
+gi_to_keep
+```
+
+```{r}
+gi_product_holding_final <-
+gi_product_holding %>% 
+  filter(POLICY_TYPE %in% gi_to_keep)
+
+gi_product_holding_final
+```
 
 
 
@@ -264,37 +387,43 @@ Full names is another possible unique identifier.
 
 ```{r}
 gi_clients_1 <-
-readxl::read_xls("../../../../C - Documentation/Data/festus_extraction/kenya/non_life/clients_kenya.xls", sheet = 1)
+readxl::read_xls("../../../../C - Documentation/Data/festus_extraction/kenya/general/clients_kenya.xls", sheet = 1)
 
 gi_clients_2 <-
-readxl::read_xls("../../../../C - Documentation/Data/festus_extraction/kenya/non_life/clients_kenya.xls", sheet = 2)
+readxl::read_xls("../../../../C - Documentation/Data/festus_extraction/kenya/general/clients_kenya.xls", sheet = 2)
 
 gi_clients_3 <-
-readxl::read_xls("../../../../C - Documentation/Data/festus_extraction/kenya/non_life/clients_kenya.xls", sheet = 3)
+readxl::read_xls("../../../../C - Documentation/Data/festus_extraction/kenya/general/clients_kenya.xls", sheet = 3)
 
 gi_clients_4 <-
-readxl::read_xls("../../../../C - Documentation/Data/festus_extraction/kenya/non_life/clients_kenya.xls", sheet = 4)
+readxl::read_xls("../../../../C - Documentation/Data/festus_extraction/kenya/general/clients_kenya.xls", sheet = 4)
 
 gi_clients_5 <-
-readxl::read_xls("../../../../C - Documentation/Data/festus_extraction/kenya/non_life/clients_kenya.xls", sheet = 5)
-```
-
-
-
-```{r}
-dim(gi_clients_1)
-head(gi_clients_1)
+readxl::read_xls("../../../../C - Documentation/Data/festus_extraction/kenya/general/clients_kenya.xls", sheet = 5)
 ```
 
 
 ```{r}
-colnames(gi_clients_1)
+gi_clients_raw <- 
+  bind_rows(gi_clients_1,
+            gi_clients_2,
+            gi_clients_3,
+            gi_clients_4,
+            gi_clients_5) %>%
+  filter(!is.na(ACCOUNT_NO))
 ```
 
+
 ```{r}
-gi_clients_1 %>% 
-  summarise(sum(is.na(ACCOUNT_NO)))
+dim(gi_clients_raw)
+gi_clients_raw
 ```
+
+
+```{r}
+rm(gi_clients_1,gi_clients_2,gi_clients_3,gi_clients_4,gi_clients_5)
+```
+
 
 ## Candidate unique customer identifier
 
@@ -337,6 +466,59 @@ gi_clients_all %>%
 ## Conclusion
 
 The client number or full names are possible unique customer identifier.
+
+# LIFE PRODUCTS
+
+Import ACCOUNT_NO, CONTRACT_GROUP_NAME, CONTRACT_VERSION
+
+```{r}
+life_products_raw <-
+read_csv(file = "../../../../C - Documentation/Data/festus_extraction/kenya/life/new/Kenya Life Policies and Policy Details.csv") %>% 
+  unite(col = PRODUCT, c(CONTRACT_GROUP_NAME,CONTRACT_VERSION), sep = "_") %>% 
+  select(ACCOUNT_NO, PRODUCT) %>% 
+  mutate(PRODUCT = str_remove(string = PRODUCT, pattern = "_NA$"))
+
+head(life_products_raw)
+```
+
+## Products to exclude
+
+We can remove products purchased less than 10 times.
+
+```{r}
+life_products_raw %>% 
+  count(PRODUCT, sort = TRUE) %>% 
+  summary()
+```
+
+```{r}
+insufficient_life_purchases <-
+life_products_raw %>% 
+  count(PRODUCT, sort = TRUE) %>% 
+  filter(n<10) %>% 
+  pull(PRODUCT)
+
+insufficient_life_purchases
+```
+
+## Product Holding
+
+```{r}
+life_product_holding <-
+life_products_raw %>% 
+  filter(!PRODUCT %in% insufficient_life_purchases) %>% 
+  distinct(ACCOUNT_NO, PRODUCT) %>% 
+  count(ACCOUNT_NO, PRODUCT)
+
+life_product_holding
+```
+
+Sense checking
+
+```{r}
+life_product_holding %>% 
+  count(ACCOUNT_NO, PRODUCT, sort = TRUE)
+```
 
 
 # ASSET MGT PRODUCTS
@@ -507,15 +689,30 @@ load("./01Apr-Customer_Matching.RData")
 ```{r}
 # Health product holdings
 saveRDS(object = health_product_holding_final, 
-        file = "./health_product_holding_final.rds")
+        file = "./product_holding/health_product_holding_final.rds")
 
 # Asset mgt product holdings
 saveRDS(object = asset_product_holding_final, 
-        file = "./asset_product_holding_final.rds")
+        file = "./product_holding/asset_product_holding_final.rds")
 
-# Asset mgt customers
-saveRDS(object = asset_mgt_customers_raw, 
-        file = "./asset_mgt_customers_raw.rds")
+# General insurance product holding
+saveRDS(object = gi_product_holding_final, 
+        file = "./product_holding/gi_product_holding_final.rds")
+
+# Life insurance product holding
+saveRDS(object = life_product_holding,
+        file = "./product_holding/life_product_holding.rds")
+
+# GI Accounts
+saveRDS(object = gi_products_raw,
+        file = "./gi_products_raw.rds")
+
+# GI clients
+saveRDS(object = gi_clients_raw, file = "./gi_clients_raw.rds")
+
+# Project image
+save.image(file = "./21Apr_Product_Cust_Matching.RData")
+load("./20Apr_Product_Cust_Matching.RData")
 ```
 
 

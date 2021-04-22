@@ -16,68 +16,12 @@ library(RSQLite)
 library(tidyverse)
 ```
 
-# IMPORT RATING MATRIX
-
-```{r}
-products_rating_matrix <- readRDS("../../Data Prep/KE/products_rating_matrix.rds")
-
-dim(products_rating_matrix)
-```
-## Product holding summary
-
-Customers hold an average of 1 insurance product.
-
-```{r}
-summary(rowCounts(products_rating_matrix))
-```
-## Product holding distribution
-
-A little over 1K customers hold more than 2 products. Cross-validated training will therefore not be supported. A good number to support CV training is \~10 products per customer.
-
-```{r}
-as(products_rating_matrix, "data.frame") %>% 
-  count(user, name = "product_holding") %>% 
-  arrange(desc(product_holding)) %>% 
-  ggplot(aes(x = product_holding))+
-  geom_histogram(binwidth = 1)+
-  geom_vline(xintercept = 3, linetype = "longdash")+
-  stat_bin(binwidth=1, geom="text", aes(label=..count..), vjust=0.25)+
-  scale_y_log10()+
-  scale_x_continuous(breaks = seq(1,6,1),
-                     labels = seq(1,6,1))+
-  labs(title = "Customer Product Holding",
-       subtitle = "A little over 1K customers hold more than 2 products")
-```
-
-## Distribution of customers
-
-Those holding more than 2 products
-
-```{r}
-users_multple_products <-
-as(products_rating_matrix,"data.frame") %>% 
-  count(user) %>% 
-  arrange(desc(n)) %>% 
-  filter(n>2) %>% 
-  pull(user)
-```
-
-94% of products being held multiple times are in Asset Management.
-
-```{r}
-as(products_rating_matrix, "data.frame") %>% 
-  filter(user %in% users_multple_products) %>% 
-  count(item) %>% 
-  arrange(desc(n)) %>% 
-  mutate(prop = n/sum(n),
-         sum_prop = cumsum(prop))
-```
 
 # VALIDATION
 
 ## Evaluation scheme
 
-Train-test split.
+Train-test split. Since most customers hold just one product, a cross-validation training cannot be done.
 
 ```{r}
 es <- 
@@ -94,7 +38,7 @@ evaluationScheme(data = products_rating_matrix,
 recommenderRegistry$get_entry_names()
 ```
 
-AR removed as it does not provide meaninful results despite reducing confidence to 0.0
+AR removed as it does not provide meaningful results despite reducing confidence to 0.0
 
 ```{r}
 algorithms <- list(
@@ -102,8 +46,8 @@ algorithms <- list(
   ibcf = list(name = "IBCF", param = NULL),
   ubcf = list(name = "UBCF", param = NULL),
   random = list(name = "RANDOM", param = NULL),
-  rerecommend = list(name = "RERECOMMEND", param = NULL))
-  #ar = list(name = "AR", param = list(confidence = 0.0)))
+  rerecommend = list(name = "RERECOMMEND", param = NULL),
+  ar = list(name = "AR", param = list(confidence = 0.0)))
 ```
 
 ## Obtain evaluation results
@@ -111,12 +55,16 @@ algorithms <- list(
 ```{r}
 gc()
 
+doParallel::registerDoParallel(parallel::detectCores())
+
 ev_list <- 
 evaluate(x = es,
          method = algorithms,
          type = "topNList",
          n = seq(1,10,1))
          #n = c(1,3,5,10))
+
+doParallel::stopImplicitCluster()
 
 gc()
 ```
@@ -136,6 +84,8 @@ Recall: Out of all the recommendations returned by the tool, were all relevant r
 ```{r}
 names(ev_list)
 ```
+
+**Based on the results below, we will deploy an IBCF model**
 
 ```{r}
 plot(x = ev_list, y = "prec/rec", annotate=TRUE, legend="topleft")
@@ -157,7 +107,7 @@ ibcf_eval <- avg(ev_list$ibcf) %>%
 pop_eval %>% 
   ggplot(aes(x = recall, y = precision))+
   geom_line()+
-  geom_text(aes(label=n), nudge_y = 0.0035)+
+  geom_text(aes(label=n))+
   labs(title = "PR Curve - Popular Recommender")
   
 ibcf_eval %>% 
@@ -431,14 +381,16 @@ hybrid_model_weights
 
 
 ```{r}
-ke_ibcf = Recommender(data = products_rating_matrix, method = "IBCF")
+ke_rec_model = Recommender(data = products_rating_matrix, method = "IBCF")
 ke_pop = Recommender(data = products_rating_matrix, method = "POPULAR")
 
-ke_hyb = HybridRecommender(ke_pop, ke_ibcf, 
-                           weights = hybrid_model_weights)
+# ke_hyb = HybridRecommender(ke_pop, ke_ibcf, 
+#                            weights = hybrid_model_weights)
 ```
 
 # USER RATINGS
+
+## Extract ratings
 
 User ratings represent how likely a user is to purchase a product.
 
@@ -446,52 +398,27 @@ User ratings represent how likely a user is to purchase a product.
 doParallel::registerDoParallel(parallel::detectCores())
 
 gc()
-pop_recommendations <- 
-  predict(object = ke_pop, newdata = products_rating_matrix, type = "ratings")
-
-gc()
-ibcf_recommendations <- 
-  predict(object = ke_ibcf, newdata = products_rating_matrix, type = "ratings")
-
-gc()
-
-hyb_recommendations <- 
-  predict(object = ke_hyb, newdata = products_rating_matrix, type = "ratings")
+ke_recommendations <- 
+  predict(object = ke_rec_model, newdata = products_rating_matrix, type = "ratings")
 
 gc()
 
 doParallel::stopImplicitCluster()
 ```
-## ibcf recommender
+## Convert to dataframe
+
+Convert rating to a dataframe.
 
 ```{r}
-ibcf_recommendations_df <- as(ibcf_recommendations, "data.frame")
+ke_recommendations_df <- as(ke_recommendations, "data.frame")
 
-ibcf_recommendations_df %>% 
-  arrange(desc(rating))
-```
-
-## Popular recommender
-
-We will deploy the popularity recommender because:
-1. It's precision is the highest.
-2. It produces stronger ratings for a marginally smaller AUC compared to IBCF.
-
-```{r}
-pop_recommendations_df <- as(pop_recommendations, "data.frame")
-
-recommendations_df <- pop_recommendations_df %>%
+ke_recommendations_df <- ke_recommendations_df %>%
   rename(ACCOUNT_NO = user,
          PRODUCT = item)
+
+ke_recommendations_df %>% 
+  arrange(rating)
 ```
-
-## Hybrid recommender
-
-
-```{r}
-as(hyb_recommendations,"data.frame")
-```
-
 
 # PRODUCT BUSINESS LINES
 
@@ -500,40 +427,54 @@ as(hyb_recommendations,"data.frame")
 ```{r}
 # Health products
 health_products <-
-readRDS("../../Data Prep/KE/health_product_holding_final.rds") %>% 
+readRDS("../../Data Prep/KE/product_holding/health_product_holding_final.rds") %>% 
   distinct(Product) %>% 
   pull(Product)
 
 # Asset Mgt products
 asset_mgt_products <-
-readRDS("../../Data Prep/KE/asset_product_holding_final.rds") %>% 
+readRDS("../../Data Prep/KE/product_holding/asset_product_holding_final.rds") %>% 
   distinct(FUND_NAME) %>% 
   pull(FUND_NAME)
+
+gi_products <-
+readRDS(file = "../../Data Prep/KE/product_holding/gi_product_holding_final.rds") %>% 
+  distinct(POLICY_TYPE) %>% 
+  pull(POLICY_TYPE)
+
+life_products <-
+readRDS(file = "../../Data Prep/KE/product_holding/life_product_holding.rds") %>% 
+  distinct(PRODUCT) %>% 
+  pull(PRODUCT)
 ```
 
 ## Create dataframe
 
 ```{r}
 product_businesslines <-
-tibble(PRODUCT = health_products,
-       BUSINESS_LINE = "Health") %>% 
-  bind_rows(
+bind_rows(
+    tibble(PRODUCT = health_products,
+           BUSINESS_LINE = "Health"),
     tibble(PRODUCT = asset_mgt_products,
-           BUSINESS_LINE = "Asset Management")
-  )
+           BUSINESS_LINE = "Asset"),
+    tibble(PRODUCT = gi_products,
+           BUSINESS_LINE = "General"),
+    tibble(PRODUCT = life_products,
+           BUSINESS_LINE = "Life")
+)
 
-head(product_businesslines)
+product_businesslines
 ```
 
 ## Join to recommendations list
 
 ```{r}
-recommendations_df
-recommendations_df %>%
+ke_recommendations_df <-
+ke_recommendations_df %>%
   left_join(product_businesslines, by = "PRODUCT") %>% 
   relocate(BUSINESS_LINE, .after = PRODUCT)
 
-head(recommendations_df)
+ke_recommendations_df
 ```
 
 ## Add Grouping & Max Rating [FINAL]
@@ -542,14 +483,14 @@ Add max rating at customer level only.
 Group results by customer and business line
 
 ```{r}
-recommendations_df <-
-recommendations_df %>% 
+ke_recommendations_df <-
+ke_recommendations_df %>% 
   group_by(ACCOUNT_NO) %>% 
   mutate(max_rating = max(rating)) %>% 
   ungroup() %>% 
   group_by(ACCOUNT_NO, BUSINESS_LINE)
 
-head(recommendations_df)
+ke_recommendations_df
 ```
 
 ## Save as data.table
@@ -574,15 +515,36 @@ sqlite_path <- "../../App/uap_cross_sell/db/ke_cs.db"
 
 ```{r}
 con <- dbConnect(drv = SQLite(), sqlite_path)
+
+dbListTables(conn = con)
 ```
+
+Remove unnecessary tables.
+
+```{r}
+dbRemoveTable(conn = con, name = "recommendations_detailed")
+
+dbRemoveTable(conn = con, name = "recommendations_detailed_sample %>% filter(ACCOUNT_NO != \"NULL\")")
+
+dbRemoveTable(conn = con, name = "popular_products")
+
+dbRemoveTable(conn = con, name = "recommendations_detailed_sample")
+
+dbListTables(conn = con)
+```
+
+## Database tables
 
 Create database tables of required data.
 
 ```{r}
-copy_to(dest = con, df = recommendations_detailed, overwrite = TRUE, temporary = FALSE)
+ke_recommendations_detailed <- readRDS(file = "../../Data Prep/KE/ke_recommendations_detailed.rds")
+```
 
+
+```{r}
 copy_to(dest = con, 
-        df = recommendations_detailed_sample, 
+        df = ke_recommendations_detailed, 
         overwrite = TRUE, 
         temporary = FALSE)
 ```
@@ -592,7 +554,7 @@ Confirm dataframes have been created as database tables
 ```{r}
 dbListTables(conn = con)
 
-tbl(src = con, "recommendations_detailed_sample")
+tbl(src = con, "ke_recommendations_detailed")
 ```
 
 
@@ -611,7 +573,7 @@ records
 ```
 
 ```{r}
-recommendations_detailed %>% 
+ke_recommendations_detailed %>% 
   filter(ACCOUNT_NO %in% records) %>%
   arrange(desc(rating)) %>% 
   slice(1:3) %>% 
@@ -621,7 +583,7 @@ recommendations_detailed %>%
 Database replication of the above results.
 
 ```{r}
-tbl(src = con, "recommendations_detailed") %>%
+tbl(src = con, "ke_recommendations_detailed") %>%
   filter(ACCOUNT_NO %in% records) %>%
   group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
   arrange(desc(rating)) %>% 
@@ -648,14 +610,14 @@ Create a sample of intermediated and unintermediated customers.
 ### Non intermediated customers
 
 ```{r}
-recommendations_detailed %>% 
+ke_recommendations_detailed %>% 
   ungroup() %>% 
   count(intermediated, ownership)
 ```
 
 ```{r}
-non_intermediated_customers <-
-recommendations_detailed %>% 
+ke_nonintermediated_customers <-
+ke_recommendations_detailed %>% 
   filter(intermediated=="No")
 ```
 
@@ -663,23 +625,23 @@ recommendations_detailed %>%
 
 ```{r}
 
-recommendations_detailed_sample <-
-recommendations_detailed %>% 
+ke_recommendations_detailed_sample <-
+ke_recommendations_detailed %>% 
   arrange(desc(max_rating)) %>% 
   head(500) %>% 
-  bind_rows(non_intermediated_customers)
+  bind_rows(ke_nonintermediated_customers)
 
-recommendations_detailed_sample <-
-recommendations_detailed_sample %>% 
+ke_recommendations_detailed_sample <-
+ke_recommendations_detailed_sample %>% 
   filter(ACCOUNT_NO !="NULL")
 
-recommendations_detailed_sample
+ke_recommendations_detailed_sample
 ```
 
 Obtain a recommendations of non-intermediated customers with 3 recommended products per business line belonging to Health insurance that can purchase a product that's worth between 100K and 200K.
 
 ```{r}
-recommendations_detailed_sample %>%
+ke_recommendations_detailed_sample %>%
   arrange(desc(max_rating),
           desc(rating),
           .by_group = TRUE) %>%
@@ -692,7 +654,15 @@ recommendations_detailed_sample %>%
 Database replication of the above results.
 
 ```{r}
-tbl(src = con, "recommendations_detailed_sample") %>% 
+copy_to(dest = con, 
+        df = ke_recommendations_detailed_sample, 
+        overwrite = TRUE,
+        temporary = FALSE)
+```
+
+
+```{r}
+tbl(src = con, "ke_recommendations_detailed_sample") %>% 
   group_by(ACCOUNT_NO, BUSINESS_LINE) %>%
   filter(intermediated=="No") %>% 
   filter(ownership=="Health") %>% 
@@ -785,7 +755,7 @@ Recommend products.
 
 ```{r}
 user_choice_recommendations <- 
-  predict(object = ke_pop, 
+  predict(object = ke_rec_model, 
           newdata = user_choices_ratmat, 
           type="ratings")
 ```
@@ -834,20 +804,19 @@ dbListTables(conn = con)
 Replicate the above results in SQL
 
 ```{r}
-tbl(src = con, "popular_products") %>% 
-  collect() %>% 
+tbl(src = con, "popular_products") %>%
   group_by(BUSINESS_LINE) %>% 
+  collect() %>% 
   slice(1:3)
 ```
-
-
 
 ## Scenario 5
 
 Valid product names.
 
 ```{r}
-tibble(colnames(products_rating_matrix)) %>% write_csv("./valid_product_names.csv")
+tibble(PRODUCTS = colnames(products_rating_matrix)) %>%
+  write_csv("./valid_product_names.csv")
 ```
 
 
@@ -871,7 +840,7 @@ cust_prods_upload <-
 Recommendations for customer numbers provided.
 
 ```{r}
-recommendations_detailed %>% 
+ke_recommendations_detailed %>% 
   filter(ACCOUNT_NO %in% acc_nums_upload) %>% 
   arrange(desc(max_rating),
           desc(rating), 
@@ -882,7 +851,7 @@ recommendations_detailed %>%
 Replicate the above results in SQL
 
 ```{r}
-tbl(src = con, "recommendations_detailed") %>%
+tbl(src = con, "ke_recommendations_detailed") %>%
   filter(ACCOUNT_NO %in% acc_nums_upload) %>%
   group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
   arrange(desc(rating)) %>% 
@@ -890,8 +859,6 @@ tbl(src = con, "recommendations_detailed") %>%
   slice(1:3) %>% 
   arrange(desc(max_rating))
 ```
-
-
 
 
 ### Customer products
@@ -954,7 +921,7 @@ Recommend products.
 
 ```{r}
 user_choice_recommendations <- 
-  predict(object = ke_pop, 
+  predict(object = ke_rec_model, 
           newdata = user_choices_ratmat, 
           type="ratings")
 ```
@@ -991,6 +958,7 @@ system.time(
 1. Product holding is per customer is 1 implying there is no cross-selling happening. This makes it harder to identify cross-selling trends.
 2. Assumption: 1 account number, 1 customer.
 
+
 # EXPORTS
 
 ```{r}
@@ -1006,35 +974,39 @@ saveRDS(object = pop_recommendations_df,
 saveRDS(object = ibcf_recommendations_df, 
         file = "./ibcf_recommendations_df.rds")
 
-saveRDS(object = recommendations_df,
-        file = "./recommendations_df.rds")
+saveRDS(object = ke_recommendations_df,
+        file = "./ke_recommendations_df.rds")
 
 # Popular products
-saveRDS(object = popular_products, file = "./popular_products.rds")
+saveRDS(object = popular_products, 
+        file = "./popular_products.rds")
 
 # Product business lines
-saveRDS(object = product_businesslines, file = "./product_businesslines.rds")
+saveRDS(product_businesslines, "./product_businesslines.rds")
 
 # Sample of customers to display
 saveRDS(object = recommendations_detailed_sample, 
         file = "./recommendations_detailed_sample.rds")
 
 # Ojects for deployment
-saveRDS(object = products_rating_matrix, file = "../../App/uap_cross_sell/objects/products_rating_matrix.rds")
+saveRDS(object = products_rating_matrix, 
+        file = "../../App/uap_cross_sell/objects/products_rating_matrix.rds")
 
-saveRDS(object = ke_pop, file = "../../App/uap_cross_sell/objects/ke_pop.rds")
+saveRDS(object = ke_rec_model, 
+        file = "../../App/uap_cross_sell/objects/ke_rec_model.rds")
 
-saveRDS(object = product_businesslines, file = "../../App/uap_cross_sell/objects/product_businesslines.rds")
+saveRDS(object = product_businesslines, 
+        file = "../../App/uap_cross_sell/objects/product_businesslines.rds")
 
-saveRDS(object = unique(recommendations_detailed$ownership), file = "../../App/uap_cross_sell/objects/ownership.rds")
+saveRDS(object = unique(ke_recommendations_detailed$ownership), 
+        file = "../../App/uap_cross_sell/objects/ownership.rds")
 
 # Project image
-save.image(file = "./19Apr_Models.RData")
+save.image(file = "./22Apr_Models.RData")
 
 # Image containing trained model
-load("./19Apr_Models.RData")
+load("./21Apr_Models.RData")
 
-getwd()
 ```
 
 

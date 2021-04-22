@@ -94,9 +94,11 @@ shinyServer(function(input, output, session) {
   
   
   
-  ##====== Create db connection as soon as user logs in successfully
+  ##====== Create db connection and load predictive model as soon as user logs in successfully
   sqlite_path <- "./db/ke_cs.db"
   con <- dbConnect(drv = SQLite(), sqlite_path)
+  
+  ke_rec_model <- readRDS("./objects/ke_rec_model.rds")
   
   
   
@@ -107,7 +109,7 @@ shinyServer(function(input, output, session) {
     records <- strsplit(x = input$customer_ids, split = ",")[[1]]
     
     chosen_customers <-
-    tbl(src = con, "recommendations_detailed") %>%
+    tbl(src = con, "ke_recommendations_detailed") %>%
       filter(ACCOUNT_NO %in% records) %>%
       group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
       arrange(desc(rating)) %>% 
@@ -154,8 +156,7 @@ shinyServer(function(input, output, session) {
       user_choices_ratmat <- as(user_choices_mat,"binaryRatingMatrix")
       
       #Recommend products
-      ke_pop <- readRDS("./objects/ke_pop.rds")
-      user_choice_recommendations <- predict(object = ke_pop, 
+      user_choice_recommendations <- predict(object = ke_rec_model, 
                                              newdata = user_choices_ratmat, 
                                              type="ratings")
       
@@ -197,7 +198,7 @@ shinyServer(function(input, output, session) {
     
     # Recommendations using uploaded customer numbers
     acc_upload <-
-    tbl(src = con, "recommendations_detailed") %>%
+    tbl(src = con, "ke_recommendations_detailed") %>%
       filter(ACCOUNT_NO %in% acc_nums_upload) %>%
       group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
       arrange(desc(rating)) %>% 
@@ -232,9 +233,8 @@ shinyServer(function(input, output, session) {
     
     user_choices_ratmat_up <- as(user_choices_mat_up,"binaryRatingMatrix")
     
-    ke_pop <- readRDS("./objects/ke_pop.rds")
     user_choice_recommendations_up <- 
-      predict(object = ke_pop, 
+      predict(object = ke_rec_model, 
               newdata = user_choices_ratmat_up, 
               type="ratings")
     
@@ -288,7 +288,7 @@ shinyServer(function(input, output, session) {
                                                        )),
                                         
                                         
-                                        tbl(src = con, "recommendations_detailed_sample") %>% 
+                                        tbl(src = con, "ke_recommendations_detailed") %>% 
                                           group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
                                           filter(intermediated==!!input$intermediated) %>% 
                                           filter(ownership==!!input$ownership) %>% 
@@ -321,8 +321,8 @@ shinyServer(function(input, output, session) {
                                                      buttons = "excel"),
                                       
                                       tbl(src = con, "popular_products") %>% 
-                                        collect() %>% 
                                         group_by(BUSINESS_LINE) %>% 
+                                        collect() %>% 
                                         slice(1:input$recomm_limit) %>% 
                                         rename(PURCHASES = n)
                                       )

@@ -7,11 +7,13 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+# PACKAGES
 
 ```{r message=FALSE, warning=FALSE}
 library(recommenderlab)
 library(glue)
 library(data.table)
+library(readxl)
 library(tidyverse)
 ```
 
@@ -44,24 +46,26 @@ c("ACCOUNT_NO",
 
 ## Product info
 
-Account Numbers tied to products
-
-```{r}
-products_rating_matrix <- readRDS("./products_rating_matrix.rds")
-
-customer_products <- as(products_rating_matrix, "data.frame") %>% 
-  rename(ACCOUNT_NO = user,
-         PRODUCT = item)
-
-head(customer_products)
-```
-
 Product business lines
 
 ```{r}
 product_businesslines <- readRDS(file = "../../Models/KE/product_businesslines.rds")
+
+product_businesslines
 ```
 
+Account Numbers tied to products
+
+```{r}
+products_rating_matrix <- readRDS("./product_holding/products_rating_matrix.rds")
+
+customer_products <- as(products_rating_matrix, "data.frame") %>% 
+  rename(ACCOUNT_NO = user,
+         PRODUCT = item) %>% 
+  left_join(product_businesslines, by = "PRODUCT")
+
+customer_products
+```
 
 # ASSET MGT
 
@@ -70,9 +74,8 @@ product_businesslines <- readRDS(file = "../../Models/KE/product_businesslines.r
 
 ```{r}
 asset_mgt_accounts <- 
-customer_products %>% 
-  left_join(product_businesslines, by = "PRODUCT") %>% 
-  filter(BUSINESS_LINE == "Asset Management")
+customer_products %>%
+  filter(BUSINESS_LINE == "Asset")
 
 head(asset_mgt_accounts)
 ```
@@ -224,14 +227,13 @@ Health product holding.
 
 ```{r}
 health_accounts <-
-customer_products %>% 
-  left_join(product_businesslines, by = "PRODUCT") %>% 
+customer_products %>%
   filter(BUSINESS_LINE == "Health")
 
 head(health_accounts)
 ```
 
-## Account <=> Products
+## Accounts <=> Products
 
 ```{r}
 health_product_info <-
@@ -379,7 +381,143 @@ health_customer_details_final %>%
   filter(ACCOUNT_NO=="420754")
 ```
 
-# PRODUCT VALUE
+# LIFE INSURANCE
+
+## Accounts <=> Products
+
+```{r}
+life_accounts <-
+customer_products %>% 
+  filter(BUSINESS_LINE=="Life")
+
+life_accounts
+```
+
+
+Import customer details from the customer master file.
+
+## Accounts <=> Customer
+
+```{r}
+life_customer_master <-
+read_csv(file = "../../../../C - Documentation/Data/festus_extraction/kenya/life/new/Kenya Life Customers.csv")
+
+life_customer_master
+```
+
+Number of accounts that cannot be joined to the customer master.
+
+```{r}
+length(setdiff(x = life_accounts$ACCOUNT_NO, 
+               y = life_customer_master$ACCOUNT_NO))
+```
+
+
+```{r}
+life_customer_info <-
+life_accounts %>% 
+  left_join(life_customer_master, by = "ACCOUNT_NO") %>% 
+  select(all_of(customer_attributes)) %>% 
+  distinct(ACCOUNT_NO, .keep_all = TRUE)
+
+life_customer_info
+```
+
+## Accounts <=> Agents
+
+Agent IDs for each Account Number
+
+```{r}
+life_agents_info <-
+read_csv(file = "../../../../C - Documentation/Data/festus_extraction/kenya/life/new/Kenya Life Policies and Policy Details.csv") %>% 
+  select(ACCOUNT_NO, AGENT_CONTRACT_ID) %>% 
+  distinct(ACCOUNT_NO, AGENT_CONTRACT_ID) %>% 
+  mutate(intermediated = if_else(condition = !is.na(AGENT_CONTRACT_ID),
+                                 true = "Yes",
+                                 false = "No"))
+
+life_agents_info
+```
+
+## Life customer details
+
+We want one record of customer details for each customer Account Number.
+
+```{r}
+life_customer_details <-
+life_accounts %>% 
+  left_join(life_agents_info, by = "ACCOUNT_NO") %>% 
+  left_join(life_customer_info) %>% 
+  distinct(ACCOUNT_NO, .keep_all = TRUE)
+
+life_customer_details
+```
+
+# GENERAL INSURANCE
+
+## Accounts <=> Products
+
+```{r}
+gi_accounts <-
+customer_products %>% 
+  filter(BUSINESS_LINE=="General")
+
+gi_accounts
+```
+
+## Accounts <=> Agents
+
+```{r}
+gi_products_raw <- readRDS(file = "./gi_products_raw.rds")
+
+gi_agent_info <-
+gi_products_raw %>% 
+  select(ACCOUNT_NO, INTERMEDIARY_CODE) %>% 
+  filter(!is.na(ACCOUNT_NO)) %>% 
+  mutate(intermediated = if_else(condition = !is.na(INTERMEDIARY_CODE),
+                                 true = "Yes",
+                                 false = "No")) %>% 
+  distinct(ACCOUNT_NO, .keep_all = TRUE)
+
+gi_agent_info
+```
+
+## Accounts <=> Customers
+
+Number of account that match between gi_accounts and gi_clients_raw
+
+```{r}
+length(intersect(x = gi_accounts$ACCOUNT_NO, y = gi_clients_raw$ACCOUNT_NO))
+```
+
+```{r}
+gi_clients_raw <- readRDS(file = "./gi_clients_raw.rds")
+
+gi_customer_info <-
+gi_clients_raw %>% 
+  select(any_of(customer_attributes))
+
+gi_customer_info
+```
+
+## Customer details
+
+Merge customer and agents information to GI accounts. At the end we want one record per customer account containing all customer details.
+
+```{r}
+gi_customer_details <-
+gi_accounts %>% 
+  select(ACCOUNT_NO) %>% 
+  left_join(gi_agent_info, by = "ACCOUNT_NO") %>% 
+  left_join(gi_customer_info, by = "ACCOUNT_NO") %>% 
+  distinct(ACCOUNT_NO, .keep_all = TRUE)
+
+dim(gi_customer_details)
+gi_customer_details
+```
+
+
+# PRODUCT VALUES
 
 ## Asset Management
 
@@ -596,19 +734,150 @@ health_accounts %>%
 health_product_values_final
 ```
 
+## Life Insurance
+
+### Transactions
+
+Life insurance account statements.
+
+```{r}
+life_statements <-
+read_csv("../../../../C - Documentation/Data/festus_extraction/kenya/life/new/Kenya Life Policy Statements.csv") %>% 
+  select(CONTRACT_ID, PAYMENT_PAID) %>% 
+  filter(PAYMENT_PAID > 0)
+
+life_statements
+```
+
+### Add Products
+
+First add Accounts
+
+```{r}
+life_statements_accounts <-
+  read_csv(file = "../../../../C - Documentation/Data/festus_extraction/kenya/life/new/Kenya Life Policies and Policy Details.csv") %>% 
+  select(CONTRACT_ID, ACCOUNT_NO)
+
+life_statements_accounts
+```
+
+Check for duplicates
+
+```{r}
+any(duplicated(life_statements_accounts))
+```
+
+### Value by Product
+
+Then add product names.
+
+```{r}
+life_product_values <-
+life_statements %>% 
+  left_join(life_statements_accounts, by = "CONTRACT_ID") %>% 
+  left_join(life_accounts, by = "ACCOUNT_NO") %>% 
+  group_by(PRODUCT) %>% 
+  summarise(product_value = mean(PAYMENT_PAID),
+            accounts = n()) %>% 
+  right_join(life_accounts %>% distinct(PRODUCT))
+
+life_product_values
+```
+
+## General Insurance
+
+Import policy statements. Since these have transaction dates, we can limit ourselves to the most recent transactions over the last 3 years. These appear in `gi_policy_statement_kenya_4.xls`.
+
+10 worksheets. Read everything as text.
+
+### Policy Statements
+
+```{r}
+gi_statement_1 <-
+read_excel(path = "../../../../C - Documentation/Data/festus_extraction/kenya/general/gi_policy_statement_kenya_4.xls", sheet = 1, col_types = "text")
+
+gi_statement_2 <-
+read_excel(path = "../../../../C - Documentation/Data/festus_extraction/kenya/general/gi_policy_statement_kenya_4.xls", sheet = 2, col_types = "text")
+
+gi_statement_3 <-
+read_excel(path = "../../../../C - Documentation/Data/festus_extraction/kenya/general/gi_policy_statement_kenya_4.xls", sheet = 3, col_types = "text")
+
+gi_statement_4 <-
+read_excel(path = "../../../../C - Documentation/Data/festus_extraction/kenya/general/gi_policy_statement_kenya_4.xls", sheet = 4, col_types = "text")
+
+gi_statement_5 <-
+read_excel(path = "../../../../C - Documentation/Data/festus_extraction/kenya/general/gi_policy_statement_kenya_4.xls", sheet = 5, col_types = "text")
+
+gi_statement_6 <-
+read_excel(path = "../../../../C - Documentation/Data/festus_extraction/kenya/general/gi_policy_statement_kenya_4.xls", sheet = 6, col_types = "text")
+
+gi_statement_7 <-
+read_excel(path = "../../../../C - Documentation/Data/festus_extraction/kenya/general/gi_policy_statement_kenya_4.xls", sheet = 7, col_types = "text")
+
+gi_statement_8 <-
+read_excel(path = "../../../../C - Documentation/Data/festus_extraction/kenya/general/gi_policy_statement_kenya_4.xls", sheet = 8, col_types = "text")
+
+gi_statement_9 <-
+read_excel(path = "../../../../C - Documentation/Data/festus_extraction/kenya/general/gi_policy_statement_kenya_4.xls", sheet = 9, col_types = "text")
+
+gi_statement_10 <-
+read_excel(path = "../../../../C - Documentation/Data/festus_extraction/kenya/general/gi_policy_statement_kenya_4.xls", sheet = 10, col_types = "text")
+```
+
+
+```{r}
+gi_statement_raw <- bind_rows(gi_statement_1, gi_statement_2, gi_statement_3, gi_statement_4, gi_statement_5, gi_statement_6, gi_statement_7, gi_statement_8, gi_statement_9, gi_statement_10) %>% 
+  select(POLICY_NO, AMOUNT) %>%
+  filter(AMOUNT > 0) %>% 
+  filter(!is.na(POLICY_NO))
+
+gi_statement_raw
+```
+
+```{r}
+rm(gi_statement_1, gi_statement_2, gi_statement_3, gi_statement_4, gi_statement_5, gi_statement_6, gi_statement_7, gi_statement_8, gi_statement_9, gi_statement_10)
+```
+
+
+### Add Product Names
+
+Number of matching records.
+
+```{r}
+length(unique(gi_statement_raw$POLICY_NO))
+
+length(intersect(x = gi_statement_raw$POLICY_NO, y = gi_products_raw$POLICY_NO))
+```
+
+
+```{r}
+gi_product_values <-
+gi_statement_raw %>% 
+  left_join(gi_products_raw %>% 
+              select(POLICY_NO, POLICY_TYPE), 
+            by = "POLICY_NO") %>% 
+  mutate(AMOUNT = as.numeric(AMOUNT)) %>% 
+  group_by(POLICY_TYPE) %>% 
+  summarise(product_value = mean(AMOUNT),
+            accounts = n()) %>% 
+  rename(PRODUCT = POLICY_TYPE)
+
+gi_product_values
+```
 
 ## Merge all products
 
 ```{r}
 product_values <-
 bind_rows(asset_product_values_final,
-          health_product_values_final) %>% 
+          health_product_values_final,
+          life_product_values,
+          gi_product_values) %>% 
   mutate(product_value = round(product_value)) %>% 
   filter(!is.na(PRODUCT))
 
-head(product_values)
+product_values
 ```
-
 
 
 # PRODUCT & OWNERSHIP
@@ -617,10 +886,13 @@ This portion needs to come last so that we can have a full view of all the busin
 
 ## Product Holding & Account Ownership
 
+
 ```{r}
 account_info <-
 bind_rows(asset_mgt_accounts,
-          health_accounts) %>% 
+          health_accounts,
+          life_accounts,
+          gi_accounts) %>% 
   distinct(ACCOUNT_NO, PRODUCT, BUSINESS_LINE) %>% 
   group_by(ACCOUNT_NO) %>% 
   add_count(ACCOUNT_NO, name = "product_count") %>% 
@@ -630,7 +902,7 @@ bind_rows(asset_mgt_accounts,
   select(ACCOUNT_NO, ownership, product_count, products)
 
 dim(account_info)
-head(account_info)
+View(account_info)
 ```
 
 ## Test
@@ -643,46 +915,98 @@ account_info %>% filter(ACCOUNT_NO %in% c("10867","1610"))
 
 Create a new single column. We need to replace `products` and `product_count` with the new `account_info`
 
-## Merge details
+Merge customer details and product information.
+
+## Customer details
+
+Retail purely customer information.
+
+```{r}
+life_customer_details_final <-
+life_customer_details %>% 
+  select(-PRODUCT, -BUSINESS_LINE, -rating)
+
+asset_customer_details_final <-
+asset_customer_details %>% 
+  select(-products, -product_count, -PRODUCT, -BUSINESS_LINE, -rating)
+
+health_customer_details_final <-
+health_customer_details %>% 
+  select(-products, -product_count)
+
+gi_customer_details
+```
+
+
+## Product details
+
+```{r}
+account_info
+```
+
+## Merge customer details
 
 ```{r}
 customer_details_proc <-
-bind_rows(asset_customer_details %>% 
-            rename(AGENT_CODE=INTERMEDIARY_CODE), 
-          health_customer_details) %>% 
-  select(-products, -product_count) %>% 
-  left_join(account_info, by = "ACCOUNT_NO")
+rbind(life_customer_details_final %>% 
+        rename(INTERMEDIARY_CODE = AGENT_CONTRACT_ID),
+      asset_customer_details_final,
+      health_customer_details_final %>% 
+        rename(INTERMEDIARY_CODE = AGENT_CODE),
+      gi_customer_details)
 
+dim(customer_details_proc)
 head(customer_details_proc)
 ```
+
+## Add product details
+
+```{r}
+customer_details_complete <-
+customer_details_proc %>% 
+  left_join(account_info, by = "ACCOUNT_NO")
+
+dim(customer_details_complete)
+head(customer_details_complete)
+```
+
+Check: An Account Number is shared among different customers across the business lines.
+
+```{r}
+customer_details_complete %>% 
+  count(ACCOUNT_NO, sort = TRUE)
+```
+
+```{r}
+customer_details_complete %>% 
+  filter(ACCOUNT_NO=="19702")
+```
+
 
 ## Single column
 
 ```{r}
-customer_details <-
-customer_details_proc %>% 
-  mutate(customer_details = glue("Names:{FULL_NAMES}
-                                 Agent Code:{AGENT_CODE}
+customer_details_final <-
+customer_details_complete %>% 
+  mutate(customer_details = glue("Agent Code:{INTERMEDIARY_CODE}
                                  Product Holding:{product_count}
-                                 Current Product:{products}
-                                 Tel No:{TELEPHONE_NUMBER}
-                                 Email:{PRIMARY_EMAIL}", 
+                                 Current Product:{products}", 
                                  .na = "Not Found")) %>% 
   select(ACCOUNT_NO, ownership, intermediated, customer_details) %>% 
   distinct(ACCOUNT_NO, .keep_all = TRUE)
 
-dim(customer_details)
-head(customer_details)
+dim(customer_details_final)
+head(customer_details_final)
 ```
 ## Test
 
 ```{r}
-customer_details %>% 
+customer_details_final %>% 
   filter(ACCOUNT_NO %in% c("10867","1610"))
 ```
 
 
-## Merge with recommendations
+## Merge with recommendation ratings
 
 We add these details to the dataframe containing product recommendation ratings.
 
@@ -691,52 +1015,55 @@ We add these details to the dataframe containing product recommendation ratings.
 * Product values
 
 ```{r}
-recommendations_df <- readRDS(file = "../../../../D - Working Papers/UAP-cross-sell/Models/KE/recommendations_df.rds")
+ke_recommendations_df <- readRDS(file = "../../../../D - Working Papers/UAP-cross-sell/Models/KE/ke_recommendations_df.rds")
 ```
 
 
 ```{r}
-recommendations_detailed <-
-recommendations_df %>%
-  left_join(customer_details, by = "ACCOUNT_NO") %>% 
+ke_recommendations_detailed <-
+ke_recommendations_df %>%
+  left_join(customer_details_final, by = "ACCOUNT_NO") %>% 
   left_join(product_values, by = "PRODUCT") %>% 
   select(-accounts) %>% 
   relocate(customer_details, .after = everything())
 
 
-dim(recommendations_detailed)
-head(recommendations_detailed)
+ke_recommendations_detailed <- 
+ke_recommendations_detailed %>% 
+  mutate(rating = round(rating,10),
+         max_rating = round(max_rating,10))
+
+dim(ke_recommendations_detailed)
+head(ke_recommendations_detailed)
 ```
 
 ## Test
 
 ```{r}
-recommendations_detailed %>% 
+ke_recommendations_detailed %>% 
   filter(ACCOUNT_NO %in% c("10867","1610")) %>% 
   distinct(ACCOUNT_NO, .keep_all = TRUE)
 ```
 
 ```{r}
-unique(recommendations_detailed$ownership)
+unique(ke_recommendations_detailed$ownership)
 ```
-
 
 # EXPORT
 
 ```{r}
-# Project image
-save.image("./15Apr_Customer_details.RData")
-
 # Detailed Recommendations
-saveRDS(object = recommendations_detailed, file = "./recommendations_detailed.rds")
+saveRDS(object = ke_recommendations_detailed, 
+        file = "./ke_recommendations_detailed.rds")
+
 
 # Recommendations as a csv
-write_csv(x = recommendations_detailed %>% select(-customer_details), 
-          file = "./recommendations_df.csv")
+# write_csv(x = ke_recommendations_detailed %>% select(-customer_details), 
+#           file = "./recommendations_df.csv")
 
-# Ownership filter
-
-load("./15Apr_Customer_details.RData")
+# Project image
+save.image("./22Apr_Customer_details.RData")
+load("./22Apr_Customer_details.RData")
 ```
 
 
