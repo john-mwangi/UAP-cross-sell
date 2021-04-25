@@ -94,12 +94,64 @@ shinyServer(function(input, output, session) {
   
   
   
-  ##====== Create db connection and load predictive model as soon as user logs in successfully
+  ##====== As soon as as user logs in successfully:
+  ### Create db connection =====================
   sqlite_path <- "./db/ke_cs.db"
   con <- dbConnect(drv = SQLite(), sqlite_path)
   
+  observeEvent(eventExpr = input$submit_sign_out,{dbDisconnect(conn = con)})
+  
+  ### load predictive models ===================
   ke_rec_model <- readRDS("./objects/ke_rec_model.rds")
   
+  ### Create prediction function ================
+  predict_on_choices <- function(user_choices, recomm_limit){
+    
+    #Products not selected
+    not_user_choices <- colnames(products_rating_matrix)[!colnames(products_rating_matrix) %in% user_choices]
+    
+    #Convert to a table
+    choices <- 
+      tibble(choice = rep(x = c(1,0), times = c(length(user_choices), length(not_user_choices))
+      ))
+    
+    user_choices_df <-
+      choices %>% 
+      mutate(user_choices = c(user_choices, not_user_choices))
+    
+    #Convert to wide format
+    user_choices_df <- 
+      pivot_wider(data = user_choices_df,
+                  names_from = user_choices, 
+                  values_from = choice)
+    
+    #Convert to binaryRatingMatrix
+    user_choices_mat <- as.matrix(user_choices_df)
+    user_choices_ratmat <- as(user_choices_mat,"binaryRatingMatrix")
+    
+    #Predict using model
+    user_choice_recommendations <- 
+      predict(object = ke_rec_model, 
+              newdata = user_choices_ratmat, 
+              type="ratings")
+    
+    #Convert prediction to dataframe
+    user_choice_recommendations_df <-
+      as(user_choice_recommendations, "data.frame") %>% 
+      rename(PRODUCT = item) %>%
+      left_join(product_businesslines, by = "PRODUCT") %>% 
+      relocate(BUSINESS_LINE, .after = PRODUCT) %>% 
+      group_by(BUSINESS_LINE) %>% 
+      arrange(desc(rating), .by_group = TRUE) %>% 
+      slice(1:input$recomm_limit) %>% 
+      left_join(tbl(src = con, "product_values") %>% collect(), 
+                by = "PRODUCT") %>% 
+      select(-accounts) %>% 
+      rename(value = product_value) %>% 
+      setNames(str_to_upper(colnames(.)))
+    
+    return(user_choice_recommendations_df)
+  }
   
   
   ###============== REACTIVES========
@@ -129,49 +181,9 @@ shinyServer(function(input, output, session) {
     if(input$submit>0){
       #Capture user selections
       user_choices <- c(input$chosen_products)
+      recomm_limit <- input$recomm_limit
       
-      #Products not selected
-      not_user_choices <- colnames(products_rating_matrix)[!colnames(products_rating_matrix) %in% user_choices]
-      
-      #Collect choices and selections into a table
-      choices <- tibble(choice = 
-                          rep(x = c(1,0), 
-                              times = c(length(user_choices), 
-                                        length(not_user_choices))
-                          ))
-      
-      user_choices_df <-
-        choices %>% 
-        mutate(user_choices = c(user_choices, not_user_choices))
-      
-      #One-hot encode user choices
-      user_choices_df <- 
-        pivot_wider(data = user_choices_df,
-                    names_from = user_choices, 
-                    values_from = choice)
-      
-      #Convert to rating matrix
-      user_choices_mat <- as.matrix(user_choices_df)
-      
-      user_choices_ratmat <- as(user_choices_mat,"binaryRatingMatrix")
-      
-      #Recommend products
-      user_choice_recommendations <- predict(object = ke_rec_model, 
-                                             newdata = user_choices_ratmat, 
-                                             type="ratings")
-      
-      #Convert recommendations to dataframe
-      user_choice_recommendations_df <-
-        as(user_choice_recommendations, "data.frame") %>% 
-        rename(PRODUCT = item) %>%
-        left_join(product_businesslines, by = "PRODUCT") %>% 
-        relocate(BUSINESS_LINE, .after = PRODUCT) %>% 
-        group_by(BUSINESS_LINE) %>% 
-        arrange(desc(rating), .by_group = TRUE) %>% 
-        slice(1:input$recomm_limit) %>% 
-        setNames(str_to_upper(colnames(.)))
-      
-      return(list(recommendations=user_choice_recommendations_df))
+      return(list(recommendations=predict_on_choices(user_choices,recomm_limit)))
     }
   })
   
@@ -211,44 +223,11 @@ shinyServer(function(input, output, session) {
     
     # Recommendations using uploaded product names
     user_choices_up <- cust_prods_upload
-    
-    not_user_choices_up <- colnames(products_rating_matrix)[!colnames(products_rating_matrix) %in% user_choices_up]
-    
-    choices_up <- tibble(choice_up = 
-                           rep(x = c(1,0), 
-                               times = c(length(user_choices_up), 
-                                         length(not_user_choices_up))
-                           ))
-    
-    user_choices_df_up <-
-      choices_up %>% 
-      mutate(user_choices_up = c(user_choices_up, not_user_choices_up))
-    
-    user_choices_df_up <- 
-      pivot_wider(data = user_choices_df_up,
-                  names_from = user_choices_up, 
-                  values_from = choice_up)
-    
-    user_choices_mat_up <- as.matrix(user_choices_df_up)
-    
-    user_choices_ratmat_up <- as(user_choices_mat_up,"binaryRatingMatrix")
-    
-    user_choice_recommendations_up <- 
-      predict(object = ke_rec_model, 
-              newdata = user_choices_ratmat_up, 
-              type="ratings")
-    
-    prod_upload <- as(user_choice_recommendations_up, "data.frame") %>% 
-      rename(PRODUCT = item) %>%
-      left_join(product_businesslines, by = "PRODUCT") %>% 
-      relocate(BUSINESS_LINE, .after = PRODUCT) %>% 
-      group_by(BUSINESS_LINE) %>% 
-      arrange(desc(rating), .by_group = TRUE) %>% 
-      slice(1:input$recomm_limit) %>% 
-      setNames(str_to_upper(colnames(.)))
+    recomm_limit <- input$recomm_limit
     
     return(list(recommendations_acc=acc_upload, 
-                recommendations_prod=prod_upload,
+                recommendations_prod=predict_on_choices(user_choices = user_choices_up, 
+                                                        recomm_limit = recomm_limit),
                 checks=acc_nums_upload))
     
   })
@@ -321,11 +300,16 @@ shinyServer(function(input, output, session) {
                                       options = list(dom = "Bfrtip",
                                                      buttons = "excel"),
                                       
-                                      tbl(src = con, "popular_products") %>% 
+                                      left_join(x = tbl(src = con, "popular_products"),
+                                                y = tbl(src = con, "product_values"),
+                                                by = "PRODUCT") %>% 
                                         group_by(BUSINESS_LINE) %>% 
                                         collect() %>% 
                                         slice(1:input$recomm_limit) %>% 
-                                        rename(PURCHASES = n)
+                                        rename(PURCHASES = n) %>% 
+                                        select(-accounts) %>% 
+                                        rename(value = product_value) %>% 
+                                        setNames(str_to_upper(colnames(.)))
                                       )
   
   #Scenario 5 output
