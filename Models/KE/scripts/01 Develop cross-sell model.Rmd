@@ -1,0 +1,1091 @@
+---
+title: "Develop cross-sell model"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# PACKAGES
+
+```{r message=FALSE, warning=FALSE}
+library(recommenderlab)
+library(DBI)
+library(RSQLite)
+library(tidyverse)
+```
+
+
+# VALIDATION
+
+## Evaluation scheme
+
+Train-test split. Since most customers hold just one product, a cross-validation training cannot be done.
+
+```{r}
+es <- 
+evaluationScheme(data = products_rating_matrix, 
+                 method = "split",
+                 train = 0.7,
+                 k = 1,
+                 given = 1)
+```
+
+## List of recommenders
+
+```{r}
+recommenderRegistry$get_entry_names()
+```
+
+AR removed as it does not provide meaningful results despite reducing confidence to 0.0
+
+```{r}
+algorithms <- list(
+  popular = list(name = "POPULAR", param = NULL),
+  ibcf = list(name = "IBCF", param = NULL),
+  ubcf = list(name = "UBCF", param = NULL),
+  random = list(name = "RANDOM", param = NULL),
+  rerecommend = list(name = "RERECOMMEND", param = NULL),
+  ar = list(name = "AR", param = list(confidence = 0.0)))
+```
+
+## Obtain evaluation results
+
+```{r}
+gc()
+
+doParallel::registerDoParallel(parallel::detectCores())
+
+ev_list <- 
+evaluate(x = es,
+         method = algorithms,
+         type = "topNList",
+         n = seq(1,10,1))
+         #n = c(1,3,5,10))
+
+doParallel::stopImplicitCluster()
+
+gc()
+```
+
+# EVALUATION METRICS
+
+## Definition
+
+Reference: [Precision-Recall formula](https://en.wikipedia.org/wiki/Precision_and_recall) in the Information Retrieval context.
+
+Precision: Out of all the recommendations returned by the tool, how many of those were relevant? Having a high number here means that many of the products recommended were relevant to the customer. This can be viewed as a measure of false-positives.
+
+Recall: Out of all the recommendations returned by the tool, were all relevant recommendation in that list or some were missing? Having a high number here means that at least one of those products being recommended was relevant.
+
+## PR Curves
+
+```{r}
+names(ev_list)
+```
+
+**Based on the results below, we will deploy an IBCF model**
+
+```{r}
+plot(x = ev_list, y = "prec/rec", annotate=TRUE, legend="topleft")
+```
+
+## Illustration
+
+What the results below mean is that if we were to recommend 10 products to the user, there is a high chance that at least one of them will be relevant. 
+
+On the other hand, if we were to recommend only 1 product to the user there is a slightly better chance that this one item is the most relevant one - though the hard numbers are not impressive.
+
+```{r}
+pop_eval <- avg(ev_list$popular) %>% 
+  as_tibble()
+
+ibcf_eval <- avg(ev_list$ibcf) %>% 
+  as_tibble()
+  
+pop_eval %>% 
+  ggplot(aes(x = recall, y = precision))+
+  geom_line()+
+  geom_text(aes(label=n))+
+  labs(title = "PR Curve - Popular Recommender")
+  
+ibcf_eval %>% 
+  ggplot(aes(x = recall, y = precision))+
+  geom_line()+
+  geom_text(aes(label=n), nudge_y = 0.0035)+
+  labs(title = "PR Curve - IBCF Recommender")
+```
+
+
+## AUC
+
+```{r}
+ibcf_auc <- pracma::trapz(x = ibcf_eval$recall, y = ibcf_eval$precision)
+pop_auc <- pracma::trapz(x = pop_eval$recall, y = pop_eval$precision)
+
+ibcf_auc
+pop_auc
+```
+
+## Operating Point
+
+We determine the optimal number of products to recommend (not per business line). This is the point closest to (1,1).
+
+
+```{r}
+pop_eval %>% 
+  select(n,
+         x = recall,
+         y = precision) %>% 
+  mutate(dist = sqrt((x-1)^2 + (y-1)^2)) %>% 
+  arrange(dist)
+
+
+ibcf_eval %>% 
+  select(n,
+         x = recall,
+         y = precision) %>% 
+  mutate(dist = sqrt((x-1)^2 + (y-1)^2)) %>% 
+  arrange(dist)
+```
+From the above results:
+* It is best to recommend 3 products - followed by 4 or 5 products in that order.
+* For the Popular recommender, recommending a single product is better than recommending 2 products.
+* For IBCF recommender, recommending 2 products is better than recommending a single product.
+* Ideally, work with 3 +/- 1 product.
+
+# HYBRID RECOMMENDER
+
+We'll create a hybrid of the IBCF and POP models
+
+## Define weights
+
+```{r}
+rec_weights <-
+  crossing(m1 = seq(0,1,0.1),
+           m2 = seq(0,1,0.1)) %>% 
+  filter(m1 + m2 == 1, 
+         !m1 %in% 1,
+         !m2 %in% 1) %>% 
+  mutate(weights = paste0(m1,",",m2)) %>% 
+  pull(weights)
+
+rec_weights
+```
+
+## Hybrid recommenders
+
+List of hybrid recommenders with different weights
+
+```{r}
+hybrids_list <- list()
+
+for (w in seq_along(rec_weights)){
+hybrids_list[[w]] <- list(
+  hybrid = list(name = "HYBRID", 
+                param = list(
+                  recommenders = list(
+                    popular = list(name = "POPULAR", param = NULL),
+                    ibcf = list(name = "IBCF", param = NULL)),
+                  weights = as.numeric(strsplit(rec_weights[[w]],",")[[1]])
+                                )))
+  
+}
+```
+
+## Obtain evaluation results
+
+```{r}
+doParallel::registerDoParallel(parallel::detectCores())
+
+ev_hybrid <- list()
+for(h in seq_along(hybrids_list)){
+  ev_hybrid[[h]] <- evaluate(es, hybrids_list[[h]], n = seq(1,10,1))
+}
+
+doParallel::stopImplicitCluster()
+```
+
+
+## Plot all results
+
+```{r}
+for(p in seq_along(ev_hybrid)){
+  plot(x = ev_hybrid[[p]], 
+       y = "prec/rec", 
+       annotate = TRUE,
+       main = print(rec_weights[p]))
+}
+```
+
+
+## Maximise AUC
+
+Criteria for selecting a hybrid recommender is either:
+1. One whose AUC is superior to either of the base models
+2. One whose precision is superior
+3. One with an operating point closest to (1,1)
+
+Extract evaluation results.
+
+```{r}
+ev_hybrid_avg <- list()
+
+for (h in seq_along(rec_weights)){
+   ev_hybrid_avg[[h]] <- avg(ev_hybrid[[h]]) %>% 
+    data.frame() %>% 
+    arrange(hybrid.recall)
+}
+
+length(ev_hybrid_avg)
+```
+
+Calculate AUC for each hybrid.
+
+```{r}
+library(pracma)
+
+hybrid_auc <- list()
+
+for (h in seq_along(rec_weights)){
+  hybrid_auc[[h]] <- trapz(x = ev_hybrid_avg[[h]]$hybrid.recall,
+                           y = ev_hybrid_avg[[h]]$hybrid.precision)
+}
+```
+
+
+## Maximise Precision
+
+Select the hybrid with the highest precision.
+
+```{r}
+hybrid_prec <- list()
+
+for (h in seq_along(rec_weights)){
+  hybrid_prec[[h]] <- ev_hybrid_avg[[h]] %>% 
+    arrange(desc(hybrid.precision)) %>% 
+    head(1) %>% 
+    pull(hybrid.precision)
+}
+
+hybrid_prec
+```
+
+
+
+# RESULTS COMPARISON
+
+
+Compare against IBCF and POP
+
+
+Put AUC results into a tibble.
+
+```{r}
+hybrids_list[[1]]$hybrid$param$recommenders[[1]]$name
+
+hybrids_list[[1]]$hybrid$param$recommenders[[2]]$name
+```
+## AUC comparision
+
+```{r}
+hybrid_auc_results <- 
+tibble(hybrid = paste0("hybrid_",seq(1,length(rec_weights),1)),
+       auc = unlist(hybrid_auc)) %>%
+  mutate(weights_pop_ibcf = rec_weights,
+         base_auc = max(pop_auc,ibcf_auc)) %>% 
+  arrange(desc(auc))
+  
+
+hybrid_auc_results %>% 
+  filter(auc > base_auc)
+```
+
+## Precision comparison
+
+Put precision results into a tibble.
+
+```{r}
+pop_prec <- avg(ev_list$popular) %>% 
+  as_tibble() %>% 
+  arrange(desc(precision)) %>% 
+  head(1) %>% 
+  pull(precision)
+
+
+ibcf_prec <- avg(ev_list$ibcf) %>% 
+  as_tibble() %>% 
+  arrange(desc(precision)) %>% 
+  head(1) %>% 
+  pull(precision)
+
+pop_prec
+ibcf_prec
+```
+
+
+```{r}
+hybrid_prec_results <- 
+tibble(hybrid = paste0("hybrid_",seq(1,length(rec_weights),1)),
+       prec = unlist(hybrid_prec)) %>%
+  mutate(weights_pop_ibcf = rec_weights,
+         base_prec = max(pop_prec,ibcf_prec)) %>% 
+  arrange(desc(prec))
+  
+
+hybrid_prec_results %>% 
+  filter(prec >= base_prec)
+```
+
+
+## Compile all results
+
+```{r}
+eval_results_all <-
+bind_rows(
+  as_tibble(avg(ev_hybrid[[7]]$hybrid)),
+  as_tibble(avg(ev_hybrid[[9]]$hybrid)),
+  as_tibble(avg(ev_list$popular)),
+  as_tibble(avg(ev_list$ibcf))) %>% 
+  mutate(model = rep(x = c("hybrid_auc","hybrid_prec","pop","ibcf"), each = 10))
+
+dim(eval_results_all)
+head(eval_results_all)
+```
+
+## Plot PR Curves
+
+From these results, a popularity recommender seems to be most appropriate. Results will be confirmed by examining the ratings produced by it.
+
+The AUC results are limited by the fact that the recall values never go to zero for the other recommenders apart from the hybrid recommender, giving the illusion that the hybrid recommender has a greater AUC.
+
+```{r}
+eval_results_all %>% 
+  ggplot(aes(x = recall, y = precision, color = model))+
+  geom_line()+
+  labs(title = "PR Curves
+       ")
+```
+
+
+# TRAINING ACTUAL MODEL
+
+`hybrid_prec` is 90% popularity recommender hence no need to train it.
+
+```{r}
+hybrid_model_weights <- as.numeric(strsplit(x = hybrid_auc_results$weights_pop_ibcf[1], split = ",")[[1]])
+
+hybrid_model_weights
+```
+
+
+```{r}
+ke_rec_model = Recommender(data = products_rating_matrix, method = "IBCF")
+ke_pop = Recommender(data = products_rating_matrix, method = "POPULAR")
+
+# ke_hyb = HybridRecommender(ke_pop, ke_ibcf, 
+#                            weights = hybrid_model_weights)
+```
+
+# USER RATINGS
+
+## Extract ratings
+
+User ratings represent how likely a user is to purchase a product.
+
+```{r}
+doParallel::registerDoParallel(parallel::detectCores())
+
+gc()
+ke_recommendations <- 
+  predict(object = ke_rec_model, newdata = products_rating_matrix, type = "ratings")
+
+gc()
+
+doParallel::stopImplicitCluster()
+```
+## Convert to dataframe
+
+Convert rating to a dataframe.
+
+```{r}
+ke_recommendations_df <- as(ke_recommendations, "data.frame")
+
+ke_recommendations_df <- ke_recommendations_df %>%
+  rename(ACCOUNT_NO = user,
+         PRODUCT = item)
+
+ke_recommendations_df %>% 
+  arrange(rating)
+```
+
+# PRODUCT BUSINESS LINES
+
+## Product names
+
+```{r}
+# Health products
+health_products <-
+readRDS("../../Data Prep/KE/product_holding/health_product_holding_final.rds") %>% 
+  distinct(Product) %>% 
+  pull(Product)
+
+# Asset Mgt products
+asset_mgt_products <-
+readRDS("../../Data Prep/KE/product_holding/asset_product_holding_final.rds") %>% 
+  distinct(FUND_NAME) %>% 
+  pull(FUND_NAME)
+
+gi_products <-
+readRDS(file = "../../Data Prep/KE/product_holding/gi_product_holding_final.rds") %>% 
+  distinct(POLICY_TYPE) %>% 
+  pull(POLICY_TYPE)
+
+life_products <-
+readRDS(file = "../../Data Prep/KE/product_holding/life_product_holding.rds") %>% 
+  distinct(PRODUCT) %>% 
+  pull(PRODUCT)
+```
+
+## Create dataframe
+
+```{r}
+product_businesslines <-
+bind_rows(
+    tibble(PRODUCT = health_products,
+           BUSINESS_LINE = "Health"),
+    tibble(PRODUCT = asset_mgt_products,
+           BUSINESS_LINE = "Asset"),
+    tibble(PRODUCT = gi_products,
+           BUSINESS_LINE = "General"),
+    tibble(PRODUCT = life_products,
+           BUSINESS_LINE = "Life")
+)
+
+product_businesslines
+```
+
+## Join to recommendations list
+
+```{r}
+ke_recommendations_df <-
+ke_recommendations_df %>%
+  left_join(product_businesslines, by = "PRODUCT") %>% 
+  relocate(BUSINESS_LINE, .after = PRODUCT)
+
+ke_recommendations_df
+```
+
+## Add Grouping & Max Rating [FINAL]
+
+Add max rating at customer level only.
+Group results by customer and business line
+
+```{r}
+ke_recommendations_df <-
+ke_recommendations_df %>% 
+  group_by(ACCOUNT_NO) %>% 
+  mutate(max_rating = max(rating)) %>% 
+  ungroup() %>% 
+  group_by(ACCOUNT_NO, BUSINESS_LINE)
+
+ke_recommendations_df
+```
+
+## Save as data.table
+
+This format removes the groups.
+
+```{r}
+#recommendations_df <- data.table(recommendations_df)
+```
+
+
+# CREATE DATABASE
+
+Create sqlite3 database to hold and query records. One country, one database, many tables.
+
+## Database Connection
+
+```{r}
+sqlite_path <- "../../../App/uap_cross_sell/db/ke_cs.db"
+```
+
+
+```{r}
+con <- dbConnect(drv = SQLite(), sqlite_path)
+
+dbListTables(conn = con)
+```
+
+```{r}
+product_values <- readRDS("../../../Data Prep/KE/03. Extract additional customer details/outputs/product_values.rds")
+
+copy_to(dest = con, df = product_values, overwrite = TRUE, temporary = FALSE)
+```
+
+
+Table schemas.
+
+```{r}
+all_schemas <- DBI::dbGetQuery(con, "SELECT * FROM sqlite_schema")
+
+all_schemas %>% 
+  select(sql) %>% 
+  slice(5) %>% 
+  pull(sql)
+
+DBI::dbGetQuery(con, "PRAGMA table_info(ke_recommendations_detailed)")
+```
+
+
+Remove unnecessary tables.
+
+```{r}
+dbRemoveTable(conn = con, name = "recommendations_detailed")
+
+dbRemoveTable(conn = con, name = "recommendations_detailed_sample %>% filter(ACCOUNT_NO != \"NULL\")")
+
+dbRemoveTable(conn = con, name = "popular_products")
+
+dbRemoveTable(conn = con, name = "recommendations_detailed_sample")
+
+dbListTables(conn = con)
+```
+
+## Database tables
+
+Create database tables of required data.
+
+```{r}
+ke_recommendations_detailed <- readRDS(file = "../../Data Prep/KE/ke_recommendations_detailed.rds")
+```
+
+
+```{r}
+copy_to(dest = con, 
+        df = ke_recommendations_detailed, 
+        overwrite = TRUE, 
+        temporary = FALSE)
+```
+
+Confirm dataframes have been created as database tables
+
+```{r}
+dbListTables(conn = con)
+
+tbl(src = con, "ke_recommendations_detailed")
+```
+
+
+# PREDICTIONS
+
+## Scenario 1
+
+Where you have a customer account number and want to 3 products per business line.
+
+```{r}
+sample_cust_num <- paste0(rownames(products_rating_matrix)[1:2], collapse =",")
+
+records <- strsplit(x = sample_cust_num, split = ",")[[1]]
+
+records
+```
+
+```{r}
+ke_recommendations_detailed %>% 
+  filter(ACCOUNT_NO %in% records) %>%
+  arrange(desc(rating)) %>% 
+  slice(1:3) %>% 
+  arrange(desc(max_rating))
+```
+
+Database replication of the above results.
+
+```{r}
+tbl(src = con, "ke_recommendations_detailed") %>%
+  filter(ACCOUNT_NO %in% records) %>%
+  group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
+  arrange(desc(rating)) %>% 
+  collect() %>% 
+  slice(1:3) %>% 
+  arrange(desc(max_rating))
+```
+
+
+## Scenario 2
+
+You want to sort all customers across the group according to who's most likely to make a purchase and return 3 recommendations per business line.
+
+Due to performance challenges, only the top 500 records will be displayed while remaining dataset can be availed as a link for downloading.
+
+We allow the end-user get the top n recommended customers based on this criteria:
+* Rank e.g. 1-10
+* Intermediated - Yes/No
+* Ownership - business line that owns the customer
+* Product value - a range
+
+Create a sample of intermediated and unintermediated customers.
+
+### Non intermediated customers
+
+```{r}
+ke_recommendations_detailed %>% 
+  ungroup() %>% 
+  count(intermediated, ownership)
+```
+
+```{r}
+ke_nonintermediated_customers <-
+ke_recommendations_detailed %>% 
+  filter(intermediated=="No")
+```
+
+### Customer sample
+
+```{r}
+
+ke_recommendations_detailed_sample <-
+ke_recommendations_detailed %>% 
+  arrange(desc(max_rating)) %>% 
+  head(500) %>% 
+  bind_rows(ke_nonintermediated_customers)
+
+ke_recommendations_detailed_sample <-
+ke_recommendations_detailed_sample %>% 
+  filter(ACCOUNT_NO !="NULL")
+
+ke_recommendations_detailed_sample
+```
+
+Obtain a recommendations of non-intermediated customers with 3 recommended products per business line belonging to Health insurance that can purchase a product that's worth between 100K and 200K.
+
+```{r}
+ke_recommendations_detailed_sample %>%
+  arrange(desc(max_rating),
+          desc(rating),
+          .by_group = TRUE) %>%
+  filter(intermediated=="No") %>% 
+  filter(ownership=="Health") %>% 
+  filter(product_value>=100000 & product_value<=200000) %>% 
+  slice(1:3)
+```
+
+Database replication of the above results.
+
+```{r}
+copy_to(dest = con, 
+        df = ke_recommendations_detailed_sample, 
+        overwrite = TRUE,
+        temporary = FALSE)
+```
+
+
+```{r}
+tbl(src = con, "ke_recommendations_detailed_sample") %>% 
+  group_by(ACCOUNT_NO, BUSINESS_LINE) %>%
+  filter(intermediated=="No") %>% 
+  filter(ownership=="Health") %>% 
+  filter(product_value>=100000 & product_value<=200000) %>% 
+  arrange(desc(max_rating),
+          desc(rating),
+          .by_group = TRUE) %>% 
+  collect() %>% 
+  slice(1:3)
+```
+
+### For download
+
+```{r}
+# Full records as a spreadsheet file
+recommendations_detailed %>% 
+  select(-customer_details) %>% 
+  filter(ACCOUNT_NO != "NULL") %>% 
+  arrange(desc(max_rating), 
+          desc(rating), 
+          .by_group = TRUE) %>%
+  write_csv(file = "../../App/uap_cross_sell/www/files/recommendations_df.csv")
+```
+
+
+## Scenario 3
+
+Include additional products on top of what one has purchased and return 3 recommendations per business line.
+
+
+Capture user selections.
+
+```{r}
+user_choices <-
+product_businesslines %>%
+  group_by(BUSINESS_LINE) %>%
+  slice_sample(n = 1) %>%
+  #filter(BUSINESS_LINE=="General") %>% 
+  pull(PRODUCT)
+
+#user_choices <- c("CORPORATE","Old Mutual Equity Fund")
+user_choices
+```
+
+Identify missing product names
+
+```{r}
+not_user_choices <- colnames(products_rating_matrix)[!colnames(products_rating_matrix) %in% user_choices]
+
+length(not_user_choices)
+```
+
+Convert to dataframe.
+
+```{r}
+choices <- tibble(choice = 
+rep(x = c(1,0), 
+    times = c(length(user_choices), 
+              length(not_user_choices))
+    ))
+
+user_choices_df <-
+choices %>% 
+  mutate(user_choices = c(user_choices, not_user_choices))
+
+(user_choices_df)
+```
+
+
+```{r}
+user_choices_df <- 
+pivot_wider(data = user_choices_df,
+            names_from = user_choices, 
+            values_from = choice)
+
+head(user_choices_df)
+```
+
+Convert to binary rating matrix.
+
+```{r}
+user_choices_mat <- as.matrix(user_choices_df)
+
+colnames(user_choices_mat)[1:10]
+
+user_choices_ratmat <- as(user_choices_mat,"binaryRatingMatrix")
+
+class(user_choices_ratmat)
+```
+
+Recommend products.
+
+```{r}
+user_choice_recommendations <- 
+  predict(object = ke_rec_model, 
+          newdata = user_choices_ratmat, 
+          type="ratings")
+```
+
+
+```{r}
+as(user_choice_recommendations, "data.frame") %>% 
+  rename(PRODUCT = item) %>%
+  left_join(product_businesslines, by = "PRODUCT") %>% 
+  relocate(BUSINESS_LINE, .after = PRODUCT) %>% 
+  group_by(BUSINESS_LINE) %>% 
+  arrange(desc(rating), .by_group = TRUE) %>% 
+  slice(1:3)
+```
+
+Convert to a user function
+
+```{r}
+predict_on_choices <- function(user_choices){
+  
+  #Products not selected
+  not_user_choices <- colnames(products_rating_matrix)[!colnames(products_rating_matrix) %in% user_choices]
+  
+  #Convert to a table
+  choices <- 
+    tibble(choice = rep(x = c(1,0), times = c(length(user_choices), length(not_user_choices))
+    ))
+
+user_choices_df <-
+choices %>% 
+  mutate(user_choices = c(user_choices, not_user_choices))
+  
+ #Convert to wide format
+user_choices_df <- 
+pivot_wider(data = user_choices_df,
+            names_from = user_choices, 
+            values_from = choice)
+
+ #Convert to binaryRatingMatrix
+user_choices_mat <- as.matrix(user_choices_df)
+user_choices_ratmat <- as(user_choices_mat,"binaryRatingMatrix")
+
+ #Predict using model
+user_choice_recommendations <- 
+  predict(object = ke_rec_model, 
+          newdata = user_choices_ratmat, 
+          type="ratings")
+
+ #Convert prediction to dataframe
+user_choice_recommendations_df <-
+as(user_choice_recommendations, "data.frame") %>% 
+  rename(PRODUCT = item) %>%
+  left_join(product_businesslines, by = "PRODUCT") %>% 
+  relocate(BUSINESS_LINE, .after = PRODUCT) %>% 
+  group_by(BUSINESS_LINE) %>% 
+  arrange(desc(rating), .by_group = TRUE) %>% 
+  left_join(tbl(src = con, "product_values") %>% collect(), 
+            by = "PRODUCT") %>% 
+
+return(user_choice_recommendations_df)
+}
+```
+
+
+```{r}
+predict_on_choices(user_choices)
+```
+
+## Scenario 4
+
+A table of the most popular products.
+
+Comment: If you examine Account Number vs Products for Health vs Asset Mgt, Asset Mgt has 54K records, while Health Insurance has 18K records.
+
+
+Get product name and sell date.
+
+```{r}
+popular_products <-
+as(products_rating_matrix, "data.frame") %>% 
+  rename(PRODUCT = item) %>% 
+  count(PRODUCT) %>% 
+  left_join(product_businesslines, by = "PRODUCT") %>% 
+  relocate(BUSINESS_LINE, .after = PRODUCT) %>%
+  group_by(BUSINESS_LINE) %>% 
+  arrange(desc(n), .by_group = TRUE)
+
+popular_products %>% 
+  slice(1:3)
+```
+
+Put the results in their own table in the database
+
+```{r}
+copy_to(dest = con, df = popular_products, overwrite = TRUE, temporary = FALSE)
+
+dbListTables(conn = con)
+```
+Replicate the above results in SQL
+
+```{r}
+tbl(src = con, "popular_products") %>%
+  group_by(BUSINESS_LINE) %>% 
+  collect() %>% 
+  slice(1:3)
+```
+
+## Scenario 5
+
+Valid product names.
+
+```{r}
+tibble(PRODUCTS = colnames(products_rating_matrix)) %>%
+  write_csv("./valid_product_names.csv")
+```
+
+
+```{r}
+acc_nums_upload <- 
+  readxl::read_excel(path = "./cs_upload_template.xlsx",
+                     sheet = "customer_acc") %>% 
+  distinct(ACCOUNT_NO) %>% 
+  mutate(ACCOUNT_NO = as.character(ACCOUNT_NO)) %>% 
+  pull(ACCOUNT_NO)
+
+cust_prods_upload <- 
+  readxl::read_excel(path = "./cs_upload_template.xlsx", 
+                     sheet = "customer_prod") %>% 
+  distinct(PRODUCT) %>% 
+  pull(PRODUCT)
+```
+
+### Customer numbers
+
+Recommendations for customer numbers provided.
+
+```{r}
+ke_recommendations_detailed %>% 
+  filter(ACCOUNT_NO %in% acc_nums_upload) %>% 
+  arrange(desc(max_rating),
+          desc(rating), 
+          .by_group = TRUE) %>% 
+  slice(1:3)
+```
+
+Replicate the above results in SQL
+
+```{r}
+tbl(src = con, "ke_recommendations_detailed") %>%
+  filter(ACCOUNT_NO %in% acc_nums_upload) %>%
+  group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
+  arrange(desc(rating)) %>% 
+  collect() %>% 
+  slice(1:3) %>% 
+  arrange(desc(max_rating))
+```
+
+
+### Customer products
+
+Recommendations on product list provided.
+
+Capture user selections.
+
+```{r}
+user_choices <- cust_prods_upload
+```
+
+Identify missing product names
+
+```{r}
+not_user_choices <- colnames(products_rating_matrix)[!colnames(products_rating_matrix) %in% user_choices]
+
+length(not_user_choices)
+```
+
+Convert to dataframe.
+
+```{r}
+choices <- tibble(choice = 
+rep(x = c(1,0), 
+    times = c(length(user_choices), 
+              length(not_user_choices))
+    ))
+
+user_choices_df <-
+choices %>% 
+  mutate(user_choices = c(user_choices, not_user_choices))
+
+head(user_choices_df)
+```
+
+
+```{r}
+user_choices_df <- 
+pivot_wider(data = user_choices_df,
+            names_from = user_choices, 
+            values_from = choice)
+
+head(user_choices_df)
+```
+
+Convert to binary rating matrix.
+
+```{r}
+user_choices_mat <- as.matrix(user_choices_df)
+
+colnames(user_choices_mat)[1:10]
+
+user_choices_ratmat <- as(user_choices_mat,"binaryRatingMatrix")
+
+class(user_choices_ratmat)
+```
+
+Recommend products.
+
+```{r}
+user_choice_recommendations <- 
+  predict(object = ke_rec_model, 
+          newdata = user_choices_ratmat, 
+          type="ratings")
+```
+
+
+```{r}
+as(user_choice_recommendations, "data.frame") %>% 
+  rename(PRODUCT = item) %>%
+  left_join(product_businesslines, by = "PRODUCT") %>% 
+  relocate(BUSINESS_LINE, .after = PRODUCT) %>% 
+  group_by(BUSINESS_LINE) %>% 
+  arrange(desc(rating), .by_group = TRUE) %>% 
+  slice(1:3)
+```
+
+
+```{r}
+system.time(
+tbl(src = con, "recommendations_detailed") %>% 
+  distinct(ownership) %>% 
+  pull(ownership)
+)
+```
+
+```{r}
+system.time(
+  unique(recommendations_detailed$ownership)
+)
+```
+
+
+# LIMITATIONS
+
+1. Product holding is per customer is 1 implying there is no cross-selling happening. This makes it harder to identify cross-selling trends.
+2. Assumption: 1 account number, 1 customer.
+
+
+# EXPORTS
+
+```{r}
+# Models
+saveRDS(object = ke_ibcf, file = "./ke_ibcf.rds")
+saveRDS(object = ke_pop, file = "./ke_pop.rds")
+saveRDS(object = ke_hyb, file = "./ke_hyb.rds")
+
+# User ratings
+saveRDS(object = pop_recommendations_df, 
+        file = "./pop_recommendations_df.rds")
+
+saveRDS(object = ibcf_recommendations_df, 
+        file = "./ibcf_recommendations_df.rds")
+
+saveRDS(object = ke_recommendations_df,
+        file = "./ke_recommendations_df.rds")
+
+# Popular products
+saveRDS(object = popular_products, 
+        file = "./popular_products.rds")
+
+# Product business lines
+saveRDS(product_businesslines, "./product_businesslines.rds")
+
+# Sample of customers to display
+saveRDS(object = recommendations_detailed_sample, 
+        file = "./recommendations_detailed_sample.rds")
+
+# Ojects for deployment
+saveRDS(object = products_rating_matrix, 
+        file = "../../App/uap_cross_sell/objects/products_rating_matrix.rds")
+
+saveRDS(object = ke_rec_model, 
+        file = "../../App/uap_cross_sell/objects/ke_rec_model.rds")
+
+saveRDS(object = product_businesslines, 
+        file = "../../App/uap_cross_sell/objects/product_businesslines.rds")
+
+saveRDS(object = unique(ke_recommendations_detailed$ownership), 
+        file = "../../App/uap_cross_sell/objects/ownership.rds")
+
+# Project image
+save.image(file = "./22Apr_Models.RData")
+
+# Image containing trained model
+load("./images/22Apr_Models.RData")
+
+```
+
+
+
+
+

@@ -1,0 +1,168 @@
+---
+title: "Propensity Model"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(caret)
+library(tidyverse)
+```
+
+# IMPORT DATA
+
+```{r}
+asset_propensity_df_final <- readRDS("../../Data Prep/KE/asset_propensity_df_final.rds")
+```
+
+
+# TRAINING
+
+## Train/test split
+
+
+```{r}
+set.seed(123)
+asset_idx <- createDataPartition(y = asset_propensity_df_final$FUND_NAME, p = 0.7, list = FALSE)
+
+asset_idx <- asset_idx[,1]
+```
+
+
+```{r}
+asset_train <- asset_propensity_df_final[asset_idx,]
+
+asset_test <- asset_propensity_df_final[-asset_idx,]
+```
+
+
+```{r}
+dim(asset_train)
+dim(asset_test)
+```
+## Training parameters
+
+```{r}
+repeats <- 1
+folds <- 10
+set.seed(123)
+train.seeds <- vector(mode = 'list', length = (repeats*folds)+1)
+for (i in 1:(repeats*folds)) train.seeds[[i]] <- sample.int(1000,1)
+set.seed(123)
+train.seeds[[(repeats*folds)+1]] <- sample.int(1000,1)
+
+trainctrl <- trainControl(method = 'none',
+                           number = 10, 
+                           classProbs = TRUE,
+                           summaryFunction = multiClassSummary,
+                           search = 'random') 
+```
+
+
+## Train
+
+```{r}
+asset_train %>% 
+  summarise_all(~sum(is.na(.)))
+```
+
+## Fix Fund Names
+
+```{r}
+asset_train <-
+asset_train %>% 
+  filter(!is.na(FUND_NAME)) %>% 
+  mutate(FUND_NAME = str_replace_all(string = FUND_NAME, 
+                                     pattern = " ", 
+                                     replacement = "_"))
+```
+
+
+```{r}
+set.seed(123)
+asset_train %>% 
+  slice_sample(n = 5000) -> asset_sample
+```
+
+
+```{r}
+asset_propensity_model <-
+train(FUND_NAME ~ AGE + MARITAL_STATUS, 
+      data = asset_sample, 
+      method = "rf")
+      #trControl = trainctrl, 
+      #tuneLength = 5, 
+      #seeds = train.seeds)
+```
+
+## Training accuracy
+
+```{r}
+train_preds <- 
+predict(object = asset_propensity_model, 
+        newdata = asset_sample %>% head(100))
+
+
+mean(asset_sample$FUND_NAME[1:100] == train_preds)
+```
+
+```{r}
+asset_sample %>% 
+  mutate(FUND_NAME = as.factor(FUND_NAME)) -> asset_sample
+```
+
+## Confusion matrix
+
+```{r}
+confusion_matrix <- 
+confusionMatrix(data = train_preds, 
+                reference = asset_sample$FUND_NAME[1:100])
+```
+
+This is the diagonal.
+
+```{r}
+as_tibble(confusion_matrix$table) %>% 
+  filter(Prediction==Reference)
+```
+
+
+
+## Predict with probabilities
+
+TODO: Add details from 
+
+```{r}
+asset_predictions <-
+predict(object = asset_propensity_model, 
+        newdata = asset_sample %>% head(100), 
+        type = "prob")
+```
+
+
+## Propensity scores
+
+```{r}
+asset_propensity_scores <-
+asset_predictions %>% 
+  bind_cols(asset_test %>% select(ACCOUNT_NO) %>% head(100)) %>% 
+  relocate(ACCOUNT_NO, .before = everything()) %>% 
+  pivot_longer(cols = 2:7, 
+               names_to = "PRODUCT", 
+               values_to = "PROPENSITY")
+
+asset_propensity_scores
+```
+
+# EXPORT
+
+```{r}
+save.image("./01Apr_Propensity.RData")
+```
+
+
+
