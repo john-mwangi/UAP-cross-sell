@@ -141,11 +141,11 @@ shinyServer(function(input, output, session) {
       rename(PRODUCT = item) %>%
       left_join(product_businesslines, by = "PRODUCT") %>% 
       relocate(BUSINESS_LINE, .after = PRODUCT) %>% 
-      group_by(BUSINESS_LINE) %>% 
-      arrange(desc(rating), .by_group = TRUE) %>% 
-      slice(1:input$recomm_limit) %>% 
       left_join(tbl(src = con, "product_values") %>% collect(), 
                 by = "PRODUCT") %>% 
+      group_by(BUSINESS_LINE) %>% 
+      arrange(desc(rating), .by_group = TRUE) %>% 
+      slice(1:recomm_limit) %>% 
       select(-accounts) %>% 
       rename(value = product_value) %>% 
       setNames(str_to_upper(colnames(.)))
@@ -166,7 +166,6 @@ shinyServer(function(input, output, session) {
       group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
       arrange(desc(rating)) %>% 
       collect() %>% 
-      slice(1:input$recomm_limit) %>% 
       arrange(desc(max_rating)) %>% 
       rename(inter = intermediated,
              value = product_value) %>% 
@@ -183,7 +182,8 @@ shinyServer(function(input, output, session) {
       user_choices <- c(input$chosen_products)
       recomm_limit <- input$recomm_limit
       
-      return(list(recommendations=predict_on_choices(user_choices,recomm_limit)))
+      return(list(recommendations=predict_on_choices(user_choices = user_choices,
+                                                     recomm_limit = recomm_limit)))
     }
   })
   
