@@ -1,0 +1,167 @@
+---
+title: "Cross-sell Model"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(recommenderlab)
+library(tidyverse)
+```
+
+
+# Import Data
+
+```{r}
+health_product_holding_final <- readRDS("../../Data Prep/KE/product_holding/health_product_holding_final.rds")
+asset_product_holding_final <- readRDS("../../Data Prep/KE/product_holding/asset_product_holding_final.rds")
+gi_product_holding_final <- readRDS("../../Data Prep/KE/product_holding/gi_product_holding_final.rds")
+life_product_holding <- readRDS("../../Data Prep/KE/product_holding/life_product_holding.rds")
+```
+
+# Check number of products & NAs
+
+```{r}
+health_product_holding_final %>% 
+  count(Product)
+
+
+asset_product_holding_final %>% 
+  count(FUND_NAME)
+
+gi_product_holding_final %>% 
+  count(POLICY_TYPE)
+
+life_product_holding %>% 
+  count(PRODUCT)
+```
+
+
+# Renaming of columns
+
+```{r}
+health_product_holding_final %>% 
+  rename(PRODUCT = Product) -> health_product_holding_final
+
+
+asset_product_holding_final %>% 
+  mutate(ACCOUNT_NO = as.character(ACCOUNT_NO)) %>% 
+  rename(PRODUCT = FUND_NAME) -> asset_product_holding_final
+
+gi_product_holding_final %>% 
+  rename(PRODUCT = POLICY_TYPE) -> gi_product_holding_final
+```
+
+
+# Merge the tables
+
+```{r}
+products_df_raw <-
+bind_rows(
+  asset_product_holding_final,
+  health_product_holding_final,
+  gi_product_holding_final,
+  life_product_holding
+)
+
+dim(products_df_raw)
+head(products_df_raw)
+```
+# Overall product holding
+
+On average, people purchase just one product.
+
+```{r}
+products_df_raw %>% 
+  count(ACCOUNT_NO) %>% 
+  summary()
+```
+
+```{r}
+purchase_dist <-
+products_df_raw %>% 
+  count(ACCOUNT_NO) %>% 
+  mutate(n = pmin(5, n)) %>% 
+  ggplot(aes(n))+
+  geom_histogram(binwidth = 0.5)+
+  scale_y_log10(labels = scales::comma_format())+
+  scale_x_continuous(breaks = seq(1,5,1),
+                     labels = c(seq(1,4,1),"+5"))+
+  stat_bin(binwidth=1, geom="text", aes(label=..count..), vjust=0.25)+
+  labs(title = "Distribution of product purchases",
+       subtitle = "Most customers purchase just one product",
+       x = "Purchases",
+       y = "Purchase Frequency")
+
+purchase_dist
+```
+
+
+# Create dummy variables
+
+```{r}
+products_df <-
+products_df_raw %>% 
+  pivot_wider(names_from = PRODUCT, 
+              values_from = n, 
+              values_fill = 0)
+
+dim(products_df)
+head(products_df)
+```
+
+
+# Missing account numbers
+
+```{r}
+setdiff(x = health_product_holding_final$ACCOUNT_NO, 
+        y = products_df$ACCOUNT_NO)
+
+setdiff(x = asset_product_holding_final$ACCOUNT_NO, 
+        y = products_df$ACCOUNT_NO)
+```
+
+
+# Convert to matrix
+
+```{r}
+products_matrix <-
+products_df %>% 
+  select(-ACCOUNT_NO) %>% 
+  as.matrix()
+
+rownames(products_matrix) <- products_df %>% pull(ACCOUNT_NO)
+```
+
+# Check matrix
+
+```{r}
+rownames(products_matrix)[1:10]
+colnames(products_matrix)[1:10]
+```
+
+# Convert to binaryRatingMatrix
+
+```{r}
+products_rating_matrix <- as(products_matrix, "binaryRatingMatrix")
+```
+
+
+```{r}
+class(products_rating_matrix)
+```
+
+# Export
+
+```{r}
+saveRDS(object = products_rating_matrix, 
+        file = "./product_holding/products_rating_matrix.rds")
+
+save.image("./20Apr_RatingMatrix.RData")
+load("./20Apr_RatingMatrix.RData")
+```
+
