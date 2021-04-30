@@ -91,6 +91,16 @@ names(ev_list)
 plot(x = ev_list, y = "prec/rec", annotate=TRUE, legend="topleft")
 ```
 
+## Metrics
+
+```{r}
+avg(ev_list$ibcf) %>% 
+  as_tibble() %>% 
+  select(precision,recall,FPR,TPR,n) %>% 
+  filter(n %in% c(1,2,3))
+```
+
+
 ## Illustration
 
 What the results below mean is that if we were to recommend 10 products to the user, there is a high chance that at least one of them will be relevant. 
@@ -1078,10 +1088,10 @@ saveRDS(object = unique(ke_recommendations_detailed$ownership),
         file = "../../App/uap_cross_sell/objects/ownership.rds")
 
 # Project image
-save.image(file = "./22Apr_Models.RData")
+save.image(file = "./images/22Apr_Models.RData")
 
 # Image containing trained model
-load("./images/22Apr_Models.RData")
+load("./images/07Apr_Models.RData")
 
 ```
 
