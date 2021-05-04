@@ -1015,7 +1015,9 @@ We add these details to the dataframe containing product recommendation ratings.
 * Product values
 
 ```{r}
-ke_recommendations_df <- readRDS(file = "../../../../D - Working Papers/UAP-cross-sell/Models/KE/ke_recommendations_df.rds")
+ke_recommendations_df <- readRDS(file = "../../../../Models/KE/outputs/ratings/ke_recommendations_df.rds")
+
+ke_recommendations_df
 ```
 
 
@@ -1026,12 +1028,6 @@ ke_recommendations_df %>%
   left_join(product_values, by = "PRODUCT") %>% 
   select(-accounts) %>% 
   relocate(customer_details, .after = everything())
-
-
-ke_recommendations_detailed <- 
-ke_recommendations_detailed %>% 
-  mutate(rating = round(rating,10),
-         max_rating = round(max_rating,10))
 
 dim(ke_recommendations_detailed)
 head(ke_recommendations_detailed)
@@ -1054,7 +1050,7 @@ unique(ke_recommendations_detailed$ownership)
 ```{r}
 # Detailed Recommendations
 saveRDS(object = ke_recommendations_detailed, 
-        file = "./ke_recommendations_detailed.rds")
+        file = "../outputs/ke_recommendations_detailed.rds")
 
 saveRDS(object = product_values,
         file = "../outputs/product_values.rds")
@@ -1065,7 +1061,7 @@ getwd()
 #           file = "./recommendations_df.csv")
 
 # Project image
-save.image("./22Apr_Customer_details.RData")
+save.image("./04May_Customer_details.RData")
 load("./22Apr_Customer_details.RData")
 ```
 
