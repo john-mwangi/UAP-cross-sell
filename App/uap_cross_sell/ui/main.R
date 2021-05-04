@@ -51,7 +51,7 @@ sidebarLayout(
                              textInput(inputId = "customer_ids", 
                                        label = "Enter account numbers separated by commas",
                                        value = "1337,1418"),
-                             withSpinner(dataTableOutput(outputId = "customer_recomms"))),
+                             withSpinner(dataTableOutput(outputId = "customer_recomms"), color = "#78C2AD")),
                     
                     tabPanel(title = "CUSTOMERS",
                              tags$p("Use this tab when you don't have a specific customer in mind but
@@ -82,7 +82,7 @@ sidebarLayout(
                                                           label = "Maximum product value", 
                                                           value = 200000))),
                              tags$hr(),
-                             withSpinner(dataTableOutput(outputId = "target_list"))),
+                             withSpinner(dataTableOutput(outputId = "target_list"), color = "#78C2AD")),
                     
                     tabPanel(title = "PRODUCTS",
                              tags$p("Use this tab when you want to recommend additional products on
