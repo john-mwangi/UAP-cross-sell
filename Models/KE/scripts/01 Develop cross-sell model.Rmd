@@ -533,7 +533,7 @@ hyb_ke_matrix %>%
 ke_recommendations_raw
 ```
 
-Since there are >17M recommendations, we retain only the top 5 products per customer per business line.
+Limit: Since there are >17M recommendations, we retain only the top 5 products per customer per business line.
 
 ```{r}
 doParallel::registerDoParallel(parallel::detectCores())
@@ -815,7 +815,7 @@ tbl(src = con, "ke_recommendations_detailed") %>%
 
 You want to sort all customers across the group according to who's most likely to make a purchase and return 3 recommendations per business line.
 
-Due to performance challenges, only the top 500 records will be displayed while remaining dataset can be availed as a link for downloading.
+Due to performance challenges, only the top 1000 records will be displayed while remaining dataset can be availed as a link for downloading.
 
 We allow the end-user get the top n recommended customers based on this criteria:
 * Rank e.g. 1-10
