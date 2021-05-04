@@ -21,12 +21,12 @@ sidebarLayout(
                 multiple = FALSE),
     numericInput(inputId = "recomm_limit", 
                  label = "Recommendations", 
-                 value = 2, min = 1, max = 10),
+                 value = 2, min = 1, max = 5),
     actionButton(inputId = "submit", label = "Submit")
     ))),
   
   # Main content
-  mainPanel(
+  mainPanel(width = 10,
     hidden(
     fluidRow(
       id = "main",
@@ -49,7 +49,7 @@ sidebarLayout(
                                         that you'd want to target and you have their account number."),
                              textInput(inputId = "customer_ids", 
                                        label = "Enter account numbers separated by commas",
-                                       value = "1337,1377"),
+                                       value = "1337,1418"),
                              dataTableOutput(outputId = "customer_recomms")),
                     
                     tabPanel(title = "CUSTOMERS",
