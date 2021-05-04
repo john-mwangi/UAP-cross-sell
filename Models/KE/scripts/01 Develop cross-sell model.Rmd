@@ -202,11 +202,18 @@ hybrids_list[[w]] <- list(
                                 )))
   
 }
+
+hybrids_list
 ```
 
 ## Obtain evaluation results
 
-```{r}
+Despite best efforts including running the hybrid on Google Colab, the model could not complete evaluation As a workaround, we trained a hybrid recommender with 90% IBCF and 10% POP knowing that IBCF is the better performing of the two models. (see Scenario 1).
+
+```{r eval=FALSE, include=FALSE}
+
+job::job({
+  
 doParallel::registerDoParallel(parallel::detectCores())
 
 ev_hybrid <- list()
@@ -215,7 +222,10 @@ for(h in seq_along(hybrids_list)){
 }
 
 doParallel::stopImplicitCluster()
+
+}, title = "Hybrid models")
 ```
+
 
 
 ## Plot all results
@@ -391,8 +401,11 @@ hybrid_model_weights
 
 
 ```{r}
-ke_rec_model = Recommender(data = products_rating_matrix, method = "IBCF")
+ke_ibcf = Recommender(data = products_rating_matrix, method = "IBCF")
 ke_pop = Recommender(data = products_rating_matrix, method = "POPULAR")
+ke_hyb <- HybridRecommender(ke_ibcf, ke_pop, weights = c(0.9, 0.1))
+
+ke_rec_model <- HybridRecommender(ke_ibcf, ke_pop, weights = c(0.9, 0.1))
 
 # ke_hyb = HybridRecommender(ke_pop, ke_ibcf, 
 #                            weights = hybrid_model_weights)
@@ -402,33 +415,166 @@ ke_pop = Recommender(data = products_rating_matrix, method = "POPULAR")
 
 ## Extract ratings
 
-User ratings represent how likely a user is to purchase a product.
+### Approach 1
 
-```{r}
+User ratings represent how likely a user is to purchase a product. This approach took too long.
+
+```{r eval=FALSE, include=FALSE}
+
+job::job({
+  
 doParallel::registerDoParallel(parallel::detectCores())
 
 gc()
+
 ke_recommendations <- 
-  predict(object = ke_rec_model, newdata = products_rating_matrix, type = "ratings")
+  predict(object = ke_hyb, newdata = products_rating_matrix, type = "ratings")
 
 gc()
 
 doParallel::stopImplicitCluster()
-```
-## Convert to dataframe
 
-Convert rating to a dataframe.
+}, title = "Hybrid ratings")
+```
+
+
+### Approach 2
+
+Do a join of the tables.
 
 ```{r}
-ke_recommendations_df <- as(ke_recommendations, "data.frame")
-
-ke_recommendations_df <- ke_recommendations_df %>%
-  rename(ACCOUNT_NO = user,
-         PRODUCT = item)
-
-ke_recommendations_df %>% 
-  arrange(rating)
+ibcf_ke_recommendations <-
+predict(object = ke_ibcf, 
+        newdata = products_rating_matrix,
+        type = "ratings")
 ```
+
+
+```{r}
+doParallel::registerDoParallel(parallel::detectCores())
+
+pop_ke_recommendations <-
+predict(object = ke_pop, 
+        newdata = products_rating_matrix,
+        type = "ratings")
+
+doParallel::stopImplicitCluster()
+```
+
+
+```{r}
+ibcf_ke_recommendations_df <-
+ibcf_ke_recommendations %>% 
+  as("data.frame") %>% 
+  as_tibble()
+
+ibcf_ke_recommendations_df
+```
+A left join on the basis of user and item cannot be done because 17M are too many records to reference. The task is taking too long to complete.
+
+```{r}
+pop_ke_recommendations_df <-
+pop_ke_recommendations %>% 
+  as("data.frame") %>% 
+  as_tibble()
+
+pop_ke_recommendations_df
+```
+
+### Approach 3
+
+We try matrices.
+
+```{r}
+ibcf_ke_recommendations %>% 
+  as("matrix") %>% 
+  dim()
+
+pop_ke_recommendations %>% 
+  as("matrix") %>% 
+  dim()
+```
+Check if column names and row names match
+
+```{r}
+identical(x = colnames(ibcf_ke_recommendations), 
+          y = colnames(pop_ke_recommendations))
+
+identical(x = rownames(ibcf_ke_recommendations), 
+          y = rownames(pop_ke_recommendations))
+```
+
+Obtain hybrid ratings...
+
+```{r}
+ibcf_ke_matrix <- as(object = ibcf_ke_recommendations, Class = "matrix") * 0.9
+pop_ke_matrix <- as(object = pop_ke_recommendations, Class = "matrix") * 0.1
+
+
+hyb_ke_matrix <- ibcf_ke_matrix + pop_ke_matrix
+```
+
+
+```{r}
+ke_recommendations_raw <-
+hyb_ke_matrix %>% 
+  as.data.frame() %>% 
+  rownames_to_column("user") %>% 
+  pivot_longer(cols = -user, 
+               values_to = "hyb_rating", 
+               names_to = "item") %>% 
+  bind_cols(pop_ke_matrix %>% 
+              as.data.frame() %>%
+              pivot_longer(cols = everything(),
+                           values_to = "pop_rating")) %>% 
+  mutate(rating = coalesce(hyb_rating, pop_rating)) %>% 
+  select(-contains("_rating"), -name)
+
+ke_recommendations_raw
+```
+
+Since there are >17M recommendations, we retain only the top 5 products per customer per business line.
+
+```{r}
+doParallel::registerDoParallel(parallel::detectCores())
+
+ke_recommendations_df <-
+ke_recommendations_raw %>%
+  group_by(user) %>% 
+  mutate(max_rating = max(rating, na.rm = TRUE)) %>% 
+  arrange(desc(max_rating),
+          desc(rating), .by_group = TRUE) %>% 
+  ungroup() %>% 
+  rename(ACCOUNT_NO = user,
+         PRODUCT = item) %>% 
+  left_join(product_businesslines, by = "PRODUCT") %>% 
+  group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
+  slice(1:5)
+
+doParallel::stopImplicitCluster()
+
+ke_recommendations_df
+```
+
+
+```{r}
+ke_recommendations_df %>% 
+  filter(ACCOUNT_NO %in% c("1337","1418"))
+```
+
+Comparison...
+
+```{r}
+predict(object = ke_hyb, 
+        newdata = products_rating_matrix[1],
+        type = "ratings") %>% 
+  as("data.frame") %>% 
+  left_join(product_businesslines, by = c("item"="PRODUCT")) %>% 
+  group_by(BUSINESS_LINE) %>% 
+  arrange(desc(rating)) %>% 
+  slice(1:5)
+```
+
 
 # PRODUCT BUSINESS LINES
 
@@ -476,41 +622,6 @@ bind_rows(
 product_businesslines
 ```
 
-## Join to recommendations list
-
-```{r}
-ke_recommendations_df <-
-ke_recommendations_df %>%
-  left_join(product_businesslines, by = "PRODUCT") %>% 
-  relocate(BUSINESS_LINE, .after = PRODUCT)
-
-ke_recommendations_df
-```
-
-## Add Grouping & Max Rating [FINAL]
-
-Add max rating at customer level only.
-Group results by customer and business line
-
-```{r}
-ke_recommendations_df <-
-ke_recommendations_df %>% 
-  group_by(ACCOUNT_NO) %>% 
-  mutate(max_rating = max(rating)) %>% 
-  ungroup() %>% 
-  group_by(ACCOUNT_NO, BUSINESS_LINE)
-
-ke_recommendations_df
-```
-
-## Save as data.table
-
-This format removes the groups.
-
-```{r}
-#recommendations_df <- data.table(recommendations_df)
-```
-
 
 # CREATE DATABASE
 
@@ -553,6 +664,11 @@ DBI::dbGetQuery(con, "PRAGMA table_info(ke_recommendations_detailed)")
 Remove unnecessary tables.
 
 ```{r}
+dbListTables(conn = con)
+```
+
+
+```{r}
 dbRemoveTable(conn = con, name = "recommendations_detailed")
 
 dbRemoveTable(conn = con, name = "recommendations_detailed_sample %>% filter(ACCOUNT_NO != \"NULL\")")
@@ -569,7 +685,7 @@ dbListTables(conn = con)
 Create database tables of required data.
 
 ```{r}
-ke_recommendations_detailed <- readRDS(file = "../../Data Prep/KE/ke_recommendations_detailed.rds")
+ke_recommendations_detailed <- readRDS(file = "../../../Data Prep/KE/03. Extract additional customer details/outputs/ke_recommendations_detailed.rds")
 ```
 
 
@@ -585,7 +701,8 @@ Confirm dataframes have been created as database tables
 ```{r}
 dbListTables(conn = con)
 
-tbl(src = con, "ke_recommendations_detailed")
+tbl(src = con, "ke_recommendations_detailed") %>% 
+  filter(ACCOUNT_NO %in% c("1337","1418"))
 ```
 
 
@@ -602,6 +719,76 @@ records <- strsplit(x = sample_cust_num, split = ",")[[1]]
 
 records
 ```
+
+Check if all business lines are represented in the IBCF model.
+
+```{r}
+predict(object = ke_rec_model, 
+        newdata = products_rating_matrix[1:2], 
+        type = "ratings") %>% 
+  as("data.frame") %>% 
+  left_join(product_businesslines, by = c("item"="PRODUCT")) %>% 
+  group_by(user, BUSINESS_LINE) %>% 
+  slice(1:3)
+```
+
+Compare with popular recommender. 
+
+```{r}
+predict(object = ke_pop, 
+        newdata = products_rating_matrix[1:2], 
+        type = "ratings") %>% 
+  as("data.frame") %>% 
+  left_join(product_businesslines, by = c("item"="PRODUCT")) %>% 
+  group_by(user, BUSINESS_LINE)
+```
+
+Hybrid recommender model
+
+```{r}
+ke_ibcf
+
+ke_pop
+```
+
+We will create a hybrid recommender with 90% IBCF and 10% POP recommenders.
+
+```{r}
+ke_hyb <- HybridRecommender(ke_ibcf, ke_pop, weights = c(0.9, 0.1))
+```
+
+
+```{r}
+predict(object = ke_hyb, 
+        newdata = products_rating_matrix[1:2], 
+        type = "ratings") %>% 
+  as("data.frame") %>% 
+  left_join(product_businesslines, by = c("item"="PRODUCT")) %>% 
+  group_by(user, BUSINESS_LINE) %>% 
+  slice(1:3)
+```
+
+Faster way of extracting ratings.
+
+```{r}
+predict(object = ke_pop, 
+        newdata = products_rating_matrix[1:2],
+        type = "ratings") %>% 
+  as("data.frame") %>% 
+  left_join(
+    predict(object = ke_ibcf, 
+        newdata = products_rating_matrix[1:2],
+        type = "ratings") %>% 
+      as("data.frame"), 
+    by = c("user","item")) %>% 
+  rename(ibcf_rating = rating.x,
+         pop_rating = rating.y) %>% 
+  mutate(hyb_rating = 0.9*ibcf_rating + 0.1*pop_rating) %>% 
+  left_join(product_businesslines, by = c("item"="PRODUCT")) %>% 
+  group_by(user, BUSINESS_LINE) %>% 
+  slice(1:3)
+```
+
 
 ```{r}
 ke_recommendations_detailed %>% 
@@ -693,16 +880,17 @@ copy_to(dest = con,
 
 
 ```{r}
-tbl(src = con, "ke_recommendations_detailed_sample") %>% 
+tbl(src = con, "ke_recommendations_detailed") %>% 
   group_by(ACCOUNT_NO, BUSINESS_LINE) %>%
   filter(intermediated=="No") %>% 
-  filter(ownership=="Health") %>% 
-  filter(product_value>=100000 & product_value<=200000) %>% 
+  filter(ownership=="General") %>% 
+  filter(product_value >= 50000 & product_value <= 200000) %>% 
   arrange(desc(max_rating),
           desc(rating),
           .by_group = TRUE) %>% 
   collect() %>% 
-  slice(1:3)
+  slice(1:3) %>% 
+  head(1000)
 ```
 
 ### For download
@@ -804,6 +992,8 @@ as(user_choice_recommendations, "data.frame") %>%
   slice(1:3)
 ```
 
+### User-defined function
+
 Convert to a user function
 
 ```{r}
@@ -814,7 +1004,9 @@ predict_on_choices <- function(user_choices){
   
   #Convert to a table
   choices <- 
-    tibble(choice = rep(x = c(1,0), times = c(length(user_choices), length(not_user_choices))
+    tibble(choice = rep(x = c(1,0), 
+                        times = c(length(user_choices), 
+                                  length(not_user_choices))
     ))
 
 user_choices_df <-
@@ -1087,11 +1279,18 @@ saveRDS(object = product_businesslines,
 saveRDS(object = unique(ke_recommendations_detailed$ownership), 
         file = "../../App/uap_cross_sell/objects/ownership.rds")
 
+saveRDS(object = ke_rec_model,
+        file = "../../../App/uap_cross_sell/objects/ke_rec_model.rds")
+
 # Project image
-save.image(file = "./images/22Apr_Models.RData")
+save.image(file = "./images/04May_Models.RData")
 
 # Image containing trained model
-load("./images/07Apr_Models.RData")
+load("./images/04May_Models.RData")
+
+# Ratings
+saveRDS(object = ke_recommendations_df, 
+        file = "../outputs/ratings/ke_recommendations_df.rds")
 
 ```
 
