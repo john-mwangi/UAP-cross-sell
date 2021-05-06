@@ -1,0 +1,59 @@
+---
+title: "Product values"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# ASSET MGT
+
+Tie values in the statements to product names in the customer datasets.
+
+## Statements
+
+```{r}
+asset_statements <-
+read.csv(
+  file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/statement_investment.csv",
+  sep = ";")
+
+asset_statements
+```
+
+## Product details
+
+`ACCOUNT_NUMBER` is the unique customer identifier.
+
+`CUSTOMER_NUMBER` cannot be used as a product identifier.
+
+```{r}
+read.csv(
+  file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_investment.csv",
+  sep = ";") %>%
+  filter(ACCOUNT_NUMBER == "100552")
+```
+
+# LIFE INSURANCE
+
+## Statements
+
+```{r}
+life_statements <-
+read.csv(
+  file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/statement_life_insurance.oipa.csv",
+  sep = ";")
+```
+
+## Product details
+
+`ACCOUNT_NUMBER` cannot be used as a product identifier.
+
+```{r}
+read.csv(
+  file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_life_insurance.oipa.csv",
+  sep = ";") %>% 
+  filter(ACCOUNT_NUMBER=="11002001")
+```
+
