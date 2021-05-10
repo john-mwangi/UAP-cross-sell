@@ -1,0 +1,180 @@
+---
+title: "Product-Customer Matching"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# PACKAGES
+
+```{r message=FALSE, warning=FALSE}
+library(readxl)
+library(data.table)
+library(tidyverse)
+```
+
+# ASSET MGT PRODUCTS
+
+## Data exploration
+
+Locating the unique customer identifier.
+
+```{r}
+asset_products_raw <- read.csv(
+  file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_investment.csv", 
+  sep = ";", 
+  na.strings = c(""," "))
+
+asset_products_raw
+```
+
+```{r}
+skimr::skim(asset_products_raw)
+```
+
+`ACCOUNT_NUMBER` is the unique customer identifier.
+
+```{r}
+asset_products_raw %>% 
+  filter(!is.na(NATIONAL_ID)) %>% 
+  count(CUSTOMER_NUMBER, sort = TRUE)
+
+asset_products_raw %>% 
+  filter(!is.na(NATIONAL_ID)) %>% 
+  count(ACCOUNT_NUMBER, sort = TRUE)
+
+asset_products_raw %>% 
+  filter(ACCOUNT_NUMBER=="100141")
+
+asset_products_raw %>% 
+  filter(!is.na(NATIONAL_ID)) %>% 
+  distinct(ACCOUNT_NUMBER,PRODUCT) %>% 
+  filter(ACCOUNT_NUMBER=="100141")
+```
+
+## Product holding
+
+The table below returns a table showing products held by each account (1 product, 1 account). n should be 1 in all cases.
+
+```{r}
+asset_product_holding <-
+asset_products_raw %>% 
+  distinct(ACCOUNT_NUMBER,PRODUCT) %>% 
+  mutate(PRODUCT = str_remove(string = PRODUCT, pattern = "^Dom - ")) %>% 
+  add_count(ACCOUNT_NUMBER, PRODUCT) %>% 
+  filter(ACCOUNT_NUMBER >= 100000) %>% 
+  mutate(ACCOUNT_NUMBER = as.character(ACCOUNT_NUMBER))
+
+asset_product_holding
+```
+
+
+## Sense check
+
+Check that a product is mapped once per customer (account number).
+
+```{r}
+asset_product_holding %>% 
+  arrange(desc(n))
+```
+
+Check that there are customers that hold more than one product.
+
+```{r}
+asset_product_holding %>% 
+  count(ACCOUNT_NUMBER, sort = TRUE)
+```
+
+Check the number and names of products.
+
+```{r}
+asset_product_holding %>% 
+  count(PRODUCT)
+```
+
+# LIFE CUSTOMERS
+
+## Data exploration
+
+Life insurance products
+
+```{r}
+life_products_raw <- 
+read.csv(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_life_insurance.oipa.csv",
+         sep = ";",
+         na.strings = c(""," ")) %>% 
+  filter(str_length(CUSTOMER_NUMBER) > 0) %>%
+  filter(!is.na(CUSTOMER_NUMBER))
+
+life_products_raw
+```
+
+
+```{r}
+life_products_raw %>% 
+  count(CUSTOMER_NUMBER, sort = TRUE)
+```
+
+`CUSTOMER_NUMBER` is the unique customer identifier.
+
+```{r}
+life_products_raw %>% 
+  filter(CUSTOMER_NUMBER=="197AF68C-4A0C-4513-BF7B-E177C522FF26")
+```
+
+## Product holding
+
+```{r}
+life_product_holding <-
+life_products_raw %>% 
+  distinct(CUSTOMER_NUMBER, PRODUCT) %>% 
+  add_count(CUSTOMER_NUMBER, PRODUCT)
+
+life_product_holding
+```
+## Sense check
+
+Check each product is mapped once per customer.
+
+```{r}
+unique(life_product_holding$n)
+```
+Check that a customer can have many products under them.
+
+```{r}
+life_product_holding %>% 
+  count(CUSTOMER_NUMBER, sort = TRUE)
+```
+
+Number of products
+
+```{r}
+life_product_holding %>% 
+  count(PRODUCT)
+```
+
+
+# EXPORT
+
+```{r}
+#dir.create("../outputs/objects", recursive = TRUE)
+save.image(file = "../outputs/images/03May.RData")
+#load(file = "../outputs/images/03May.RData")
+
+saveRDS(object = asset_product_holding, 
+        file = "../outputs/objects/asset_product_holding.rds")
+saveRDS(object = life_product_holding, 
+        file = "../outputs/objects/life_product_holding.rds")
+```
+
+
+
+
+
+
+
+
+

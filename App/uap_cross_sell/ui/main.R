@@ -3,6 +3,7 @@ ownership <- readRDS("./objects/ownership.rds")
 
 library(shiny)
 library(DT)
+library(shinycssloaders)
 
 fluidPage(
   
@@ -21,12 +22,12 @@ sidebarLayout(
                 multiple = FALSE),
     numericInput(inputId = "recomm_limit", 
                  label = "Recommendations", 
-                 value = 2, min = 1, max = 10),
+                 value = 2, min = 1, max = 5),
     actionButton(inputId = "submit", label = "Submit")
     ))),
   
   # Main content
-  mainPanel(
+  mainPanel(width = 10,
     hidden(
     fluidRow(
       id = "main",
@@ -49,8 +50,8 @@ sidebarLayout(
                                         that you'd want to target and you have their account number."),
                              textInput(inputId = "customer_ids", 
                                        label = "Enter account numbers separated by commas",
-                                       value = "1337,1377"),
-                             dataTableOutput(outputId = "customer_recomms")),
+                                       value = "1337,1418"),
+                             withSpinner(dataTableOutput(outputId = "customer_recomms"), color = "#78C2AD")),
                     
                     tabPanel(title = "CUSTOMERS",
                              tags$p("Use this tab when you don't have a specific customer in mind but
@@ -81,7 +82,7 @@ sidebarLayout(
                                                           label = "Maximum product value", 
                                                           value = 200000))),
                              tags$hr(),
-                             dataTableOutput(outputId = "target_list")),
+                             withSpinner(dataTableOutput(outputId = "target_list"), color = "#78C2AD")),
                     
                     tabPanel(title = "PRODUCTS",
                              tags$p("Use this tab when you want to recommend additional products on

@@ -60,6 +60,7 @@ health_prod_holding %>%
 
 ## Fixing Product Names
 
+Keldine's email on 30 March 2021:
 Basically, you have different afya products:- imara, county, exec etc; in addition, anything that is not retail should be corporate; anything that is retail and not defined should be Afya Imara.
 
 ```{r}
