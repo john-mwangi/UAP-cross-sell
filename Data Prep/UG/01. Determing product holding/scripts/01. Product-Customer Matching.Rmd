@@ -58,31 +58,6 @@ health_prod_holding %>%
 ```
 
 
-## Fixing Product Names
-
-Basically, you have different afya products:- imara, county, exec etc; in addition, anything that is not retail should be corporate; anything that is retail and not defined should be Afya Imara.
-
-```{r}
-# health_products_amended <-
-# health_products_raw %>%
-#   select(ACCOUNT_NO, Product, POLICY_TYPE) %>% 
-#   filter(POLICY_TYPE=="RETAIL") %>% 
-#   filter(str_detect(string = Product, 
-#                     pattern = "^AFYA.*", 
-#                     negate = TRUE)) %>% 
-#   mutate(Product_corrected = "AFYA IMARA") %>% 
-#   distinct(ACCOUNT_NO, Product = Product_corrected)
-# 
-# head(health_products_amended)
-```
-
-Check if it worked
-
-```{r}
-# health_products_amended %>% 
-#   count(Product)
-```
-
 ## Merged Products [FINAL]
 
 Because one customer account number can contain more than one product, we join on the basis of `ACCOUNT_NO` and `Product`.
@@ -233,22 +208,7 @@ gi_product_holding %>%
   distinct(POLICY_TYPE)
 ```
 
-Feedback obtained from Keldine regarding the products to keep or dispose from the model.
-
 ```{r}
-# gi_to_keep <- read_excel(path = "./gi_products_KM_Response.xlsx") %>% 
-#   filter(`Keep/Rid`=="Keep") %>% 
-#   pull(PRODUCT)
-# 
-# gi_to_keep
-```
-
-```{r}
-# gi_product_holding_final <-
-# gi_product_holding %>% 
-#   filter(POLICY_TYPE %in% gi_to_keep)
-# 
-# gi_product_holding_final
 gi_product_holding_final <- gi_product_holding
 ```
 
@@ -301,14 +261,14 @@ Account Number (in products) can be a common unique customer identifier between 
 # EXPORT
 
 ```{r}
-save.image(file = "./29Apr-Customer_Matching.RData")
-load("29Apr-Customer_Matching.RData")
+save.image(file = "./10May-Customer_Matching.RData")
+load("10May-Customer_Matching.RData")
 ```
 
 
 ```{r}
 #Create product_holding directory
-dir.create("../../product_holding/")
+# dir.create("../../product_holding/")
 # Health product holdings
 saveRDS(object = health_product_holding_final, 
         file = "../../product_holding/health_product_holding_final.rds")
@@ -326,8 +286,8 @@ saveRDS(object = gi_products_raw,
         file = "../../product_holding/gi_products_raw.rds")
 
 # Project image
-save.image(file = "./29Apr_Product_Cust_Matching.RData")
-load("29Apr_Product_Cust_Matching.RData")
+save.image(file = "./10May_Product_Cust_Matching.RData")
+load("10May_Product_Cust_Matching.RData")
 ```
 
 

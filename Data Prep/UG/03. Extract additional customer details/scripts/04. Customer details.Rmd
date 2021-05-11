@@ -755,20 +755,20 @@ unique(ug_recommendations_detailed$ownership)
 
 ```{r}
 # Detailed Recommendations
-saveRDS(object = ug_recommendations_detailed, 
-        file = "../outputs/ug_recommendations_detailed.rds")
+ saveRDS(object = ug_recommendations_detailed,
+         file = "../outputs/ug_recommendations_detailed.rds")
 
-saveRDS(object = product_values,
-        file = "../outputs/product_values.rds")
+ saveRDS(object = product_values,
+         file = "../outputs/product_values.rds")
 
 getwd()
 # Recommendations as a csv
-# write_csv(x = ke_recommendations_detailed %>% select(-customer_details), 
-#           file = "./recommendations_df.csv")
+write_csv(x = ug_recommendations_detailed %>% select(-customer_details),
+          file = "./recommendations_df.csv")
 
 # Project image
-save.image("./06May_Customer_details.RData")
-load("./06May_Customer_details.RData")
+save.image("./10May_Customer_details.RData")
+load("./10May_Customer_details.RData")
 ```
 
 

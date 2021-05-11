@@ -144,10 +144,10 @@ class(products_rating_matrix)
 # Export
 
 ```{r}
-# saveRDS(object = products_rating_matrix, 
-#         file = "../../product_holding/products_rating_matrix.rds")
-# 
-# save.image("./06May_RatingMatrix.RData")
-load("./06May_RatingMatrix.RData")
+saveRDS(object = products_rating_matrix,
+        file = "../../product_holding/products_rating_matrix.rds")
+
+save.image("./10May_RatingMatrix.RData")
+load("./10May_RatingMatrix.RData")
 ```
 
