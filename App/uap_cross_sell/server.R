@@ -1,6 +1,3 @@
-product_businesslines <- readRDS("./objects/product_businesslines.rds")
-products_rating_matrix <- readRDS("./objects/products_rating_matrix.rds")
-
 library(shiny)
 library(recommenderlab)
 library(DT)
@@ -11,23 +8,23 @@ library(tidyverse)
 shinyServer(function(input, output, session) {
   
   ##======== FIREBASE AUTHENTICATION============
-
+  
   ##### Switch Views ------------------
   # if user click link to register, go to register view
   observeEvent(input$go_to_register, {
     shinyjs::show("register_panel", anim = TRUE, animType = "fade")
     shinyjs::hide("sign_in_panel")
   }, ignoreInit = TRUE)
-
+  
   observeEvent(input$go_to_sign_in, {
     shinyjs::hide("register_panel")
     shinyjs::show("sign_in_panel", anim = TRUE, animType = "fade")
   }, ignoreInit = TRUE)
-
+  
   # switch between auth sign in/registration and app for signed in user
   observeEvent(session$userData$current_user(), {
     current_user <- session$userData$current_user()
-
+    
     if (is.null(current_user)) {
       shinyjs::show("sign_in_panel")
       shinyjs::hide("main")
@@ -36,7 +33,7 @@ shinyServer(function(input, output, session) {
     } else {
       shinyjs::hide("sign_in_panel")
       shinyjs::hide("register_panel")
-
+      
       if (current_user$emailVerified == TRUE) {
         shinyjs::show("main")
         shinyjs::show("side_panel")
@@ -45,42 +42,42 @@ shinyServer(function(input, output, session) {
       }
       
     }
-
+    
   }, ignoreNULL = FALSE)
-
-
-
-
+  
+  
+  
+  
   # Signed in user --------------------
   # the `session$userData$current_user()` reactiveVal will hold information about the user
   # that has signed in through Firebase.  A value of NULL will be used if the user is not
   # signed in
   session$userData$current_user <- reactiveVal(NULL)
-
+  
   # input$sof_auth_user comes from front end js in "www/sof-auth.js"
   observeEvent(input$sof_auth_user, {
-
+    
     # set the signed in user
     session$userData$current_user(input$sof_auth_user)
-
+    
   }, ignoreNULL = FALSE)
-
-
-
+  
+  
+  
   ##### App for signed in user
   signed_in_user_df <- reactive({
     req(session$userData$current_user())
-
+    
     out <- session$userData$current_user()
     out <- unlist(out)
-
+    
     data.frame(
       name = names(out),
       value = unname(out)
     )
   })
-
-
+  
+  
   output$user_out <- DT::renderDT({
     datatable(
       signed_in_user_df(),
@@ -93,22 +90,63 @@ shinyServer(function(input, output, session) {
   })
   
   
+  observeEvent(eventExpr = input$submit_sign_out,{dbDisconnect(conn = con)})
+  
   
   ##====== As soon as as user logs in successfully:
   ### Create db connection =====================
-  sqlite_path <- "./db/ke_cs.db"
-  con <- dbConnect(drv = SQLite(), sqlite_path)
+  ke_sqlite_path <- "./db/ke_cs.db"
+  zw_sqlite_path <- "./db/zw_cs.db"
+  supp_sqlite_path <- "./db/support.db"
   
-  observeEvent(eventExpr = input$submit_sign_out,{dbDisconnect(conn = con)})
+  con_ke <- dbConnect(drv = SQLite(), ke_sqlite_path)
+  con_zw <- dbConnect(drv = SQLite(), zw_sqlite_path)
+  con_supp <- dbConnect(drv = SQLite(), supp_sqlite_path)
+  
+  db_con = reactive({
+    switch(EXPR = input$country,
+           "Kenya" = con <- con_ke,
+           "Zimbabwe" = con <- con_zw)
+    
+    return(list(con=con))
+  })
+  
+  
+  ###==============UPDATE UI ELEMENTS==========
+  observe({
+    ownership_update <- 
+      tbl(src = con_supp, "support") %>% 
+      filter(country==!!input$country & !is.na(ownership)) %>% 
+      collect() %>% 
+      pull(unique(ownership))
+    
+    updateSelectInput(session = session, inputId = "ownership", choices = ownership_update)
+  })
+  
+  observe({
+    products_update <- 
+      tbl(src = con_supp, "support") %>% 
+      filter(country==!!input$country & !is.na(products)) %>% 
+      collect() %>% 
+      pull(unique(products))
+    
+    updateSelectInput(session = session, inputId = "chosen_products", choices = products_update)
+  })
   
   ### load predictive models ===================
-  ke_rec_model <- readRDS("./objects/ke_rec_model.rds")
+  #ke_rec_model <- readRDS("./objects/models/ke_rec_model.rds")
   
   ### Create prediction function ================
   predict_on_choices <- function(user_choices, recomm_limit){
     
     #Products not selected
-    not_user_choices <- colnames(products_rating_matrix)[!colnames(products_rating_matrix) %in% user_choices]
+    not_user_choices <-
+      tbl(src = con_supp, "support") %>% 
+      filter(country==!!input$country) %>% 
+      filter(!products %in% user_choices & !is.na(products)) %>%
+      collect() %>% 
+      pull(products)
+    
     
     #Convert to a table
     choices <- 
@@ -130,8 +168,8 @@ shinyServer(function(input, output, session) {
     user_choices_ratmat <- as(user_choices_mat,"binaryRatingMatrix")
     
     #Predict using model
-    user_choice_recommendations <- 
-      predict(object = ke_rec_model, 
+    user_choice_recommendations <-
+      predict(object = readRDS(paste0("./objects/models/",input$country,".rds")), 
               newdata = user_choices_ratmat, 
               type="ratings")
     
@@ -139,9 +177,10 @@ shinyServer(function(input, output, session) {
     user_choice_recommendations_df <-
       as(user_choice_recommendations, "data.frame") %>% 
       rename(PRODUCT = item) %>%
-      left_join(product_businesslines, by = "PRODUCT") %>% 
+      left_join(tbl(src = db_con()$con, "product_businesslines") %>% collect(),
+                by = "PRODUCT") %>% 
       relocate(BUSINESS_LINE, .after = PRODUCT) %>% 
-      left_join(tbl(src = con, "product_values") %>% collect(), 
+      left_join(tbl(src = db_con()$con, "product_values") %>% collect(), 
                 by = "PRODUCT") %>% 
       group_by(BUSINESS_LINE) %>% 
       arrange(desc(rating), .by_group = TRUE) %>% 
@@ -158,11 +197,11 @@ shinyServer(function(input, output, session) {
   ###============== REACTIVES========
   
   dfScenario1 = reactive({
-    
+      
     records <- strsplit(x = input$customer_ids, split = ",")[[1]]
     
     chosen_customers <-
-    tbl(src = con, "ke_recommendations_detailed") %>%
+      tbl(src = db_con()$con, "recommendations_detailed") %>% 
       filter(ACCOUNT_NO %in% records) %>%
       group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
       arrange(desc(rating)) %>% 
@@ -176,6 +215,33 @@ shinyServer(function(input, output, session) {
       setNames(str_to_upper(colnames(.)))
     
     return(list(recommendations=chosen_customers))
+    
+  })
+  
+  
+  dfScenario2 = reactive({
+    
+    # Limit to 1000 records due to performance
+    filtered_customers <-
+    tbl(src = db_con()$con, "recommendations_detailed") %>% 
+      group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
+      filter(intermediated==!!input$intermediated) %>% 
+      filter(ownership==!!input$ownership) %>%
+      filter(product_value>=!!input$min_prod_value) %>% 
+      filter(product_value<=!!input$max_prod_value) %>%
+      arrange(desc(max_rating),
+              desc(rating),
+              .by_group = TRUE) %>% 
+      collect() %>% 
+      slice(1:input$recomm_limit) %>%
+      head(1000) %>% 
+      mutate(max_rating = round(max_rating,3),
+             rating = round(rating,3)) %>%
+      rename(inter = intermediated,
+             value = product_value) %>% 
+      setNames(str_to_upper(colnames(.)))
+    
+    return(list(recommendations=filtered_customers))
     
   })
   
@@ -214,7 +280,7 @@ shinyServer(function(input, output, session) {
     
     # Recommendations using uploaded customer numbers
     acc_upload <-
-    tbl(src = con, "ke_recommendations_detailed") %>%
+      tbl(src = db_con()$con, "recommendations_detailed") %>%
       filter(ACCOUNT_NO %in% acc_nums_upload) %>%
       group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
       arrange(desc(rating)) %>% 
@@ -270,27 +336,10 @@ shinyServer(function(input, output, session) {
                                                          "var full_text = 'Customer details: ' + data[8]",
                                                          "$('td', row).attr('title', full_text);",
                                                          "}"
-                                                       )),
-                                        
-                                        # Limit to 1000 records due to performance
-                                        tbl(src = con, "ke_recommendations_detailed") %>% 
-                                          group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
-                                          filter(intermediated==!!input$intermediated) %>% 
-                                          filter(ownership==!!input$ownership) %>%
-                                          filter(product_value>=!!input$min_prod_value) %>% 
-                                          filter(product_value<=!!input$max_prod_value) %>%
-                                          arrange(desc(max_rating),
-                                                  desc(rating),
-                                                  .by_group = TRUE) %>% 
-                                          collect() %>% 
-                                          slice(1:input$recomm_limit) %>%
-                                          head(1000) %>% 
-                                          mutate(max_rating = round(max_rating,3),
-                                                 rating = round(rating,3)) %>%
-                                          rename(inter = intermediated,
-                                                 value = product_value) %>% 
-                                          setNames(str_to_upper(colnames(.)))
-                                        )
+                                                       )), {
+                                                         dfScenario2()$recommendations
+                                                       }
+  )
   
   #Scenario 3 output
   output$chosen_recomms <- renderDataTable(server = FALSE,
@@ -308,8 +357,8 @@ shinyServer(function(input, output, session) {
                                       options = list(dom = "Bfrtip",
                                                      buttons = "excel"),
                                       
-                                      left_join(x = tbl(src = con, "popular_products"),
-                                                y = tbl(src = con, "product_values"),
+                                      left_join(x = tbl(src = db_con()$con, "popular_products"),
+                                                y = tbl(src = db_con()$con, "product_values"),
                                                 by = "PRODUCT") %>% 
                                         group_by(BUSINESS_LINE) %>% 
                                         collect() %>% 
@@ -318,7 +367,7 @@ shinyServer(function(input, output, session) {
                                         select(-accounts) %>% 
                                         rename(value = product_value) %>% 
                                         setNames(str_to_upper(colnames(.)))
-                                      )
+  )
   
   #Scenario 5 output
   output$accounts_upload <- renderDataTable(server = FALSE,
@@ -348,7 +397,7 @@ shinyServer(function(input, output, session) {
   output$checks <- renderText({
     dfScenario5()$checks
   })
-
+  
   
   ### END
 })

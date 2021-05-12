@@ -1,6 +1,3 @@
-products_rating_matrix <- readRDS("./objects/products_rating_matrix.rds")
-ownership <- readRDS("./objects/ownership.rds")
-
 library(shiny)
 library(DT)
 library(shinycssloaders)
@@ -50,7 +47,7 @@ sidebarLayout(
                                         that you'd want to target and you have their account number."),
                              textInput(inputId = "customer_ids", 
                                        label = "Enter account numbers separated by commas",
-                                       value = "1337,1418"),
+                                       value = "1337,1418,100003,101403"),
                              withSpinner(dataTableOutput(outputId = "customer_recomms"), color = "#78C2AD")),
                     
                     tabPanel(title = "CUSTOMERS",
@@ -64,13 +61,13 @@ sidebarLayout(
                                              selectInput(inputId = "intermediated",
                                                          label = "Intermediated", 
                                                          choices = c("Yes","No"), 
-                                                         selected = "No",
+                                                         selected = "Yes",
                                                          multiple = FALSE)),
                                       column(width = 3,
                                              selectInput(inputId = "ownership", 
                                                          label = "Select account ownership", 
-                                                         choices = ownership, 
-                                                         selected = "General",
+                                                         choices = "Account Ownership", 
+                                                         #selected = "General",
                                                          multiple = FALSE)),
                                       column(width = 3,
                                              numericInput(inputId = "min_prod_value", 
@@ -90,15 +87,15 @@ sidebarLayout(
                              tags$p(),
                              selectInput(inputId = "chosen_products", 
                                          label = "Products chosen by the customer", 
-                                         choices = colnames(products_rating_matrix),
+                                         choices = "Chosen Products",
                                          multiple = TRUE),
-                             dataTableOutput(outputId = "chosen_recomms")),
+                             withSpinner(dataTableOutput(outputId = "chosen_recomms"), color = "#78C2AD")),
                     
                     tabPanel(title = "POPULAR",
                              tags$p("These are the most popular products at UAP-OM. It is a good place 
                                 to start if you don't have any information about a customer's preferences"),
                              tags$p(),
-                             DTOutput(outputId = "popular_products")),
+                             withSpinner(DTOutput(outputId = "popular_products"), color = "#78C2AD")),
                     
                     tabPanel(title = "BULK",
                              tags$p("Use this tab for obtaining product recommendations in bulk by providing
