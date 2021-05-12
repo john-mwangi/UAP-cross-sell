@@ -12,4 +12,9 @@
 .btn-danger pull-right {
   float: right;
   color: white;
+  margin-top: 1,5rem;
+}
+
+h3, .h3 {
+  float: left;
 }
