@@ -301,8 +301,9 @@ tibble(hybrid = paste0("hybrid_",seq(1,length(rec_weights),1)),
   arrange(desc(auc))
   
 
-hybrid_auc_results %>% 
-  filter(auc > base_auc)
+hybrid_auc_results 
+# %>% 
+  # filter(auc > base_auc)
 ```
 
 ## Precision comparison
@@ -529,21 +530,11 @@ all_schemas %>%
   slice(5) %>% 
   pull(sql)
 
-DBI::dbGetQuery(con, "PRAGMA table_info(ke_recommendations_detailed)")
+DBI::dbGetQuery(con, "PRAGMA table_info(ug_recommendations_detailed)")
 ```
 
 
-Remove unnecessary tables.
-
 ```{r}
-# dbRemoveTable(conn = con, name = "recommendations_detailed")
-# 
-# dbRemoveTable(conn = con, name = "recommendations_detailed_sample %>% filter(ACCOUNT_NO != \"NULL\")")
-# 
-# dbRemoveTable(conn = con, name = "popular_products")
-# 
-# dbRemoveTable(conn = con, name = "recommendations_detailed_sample")
-
 dbListTables(conn = con)
 ```
 
@@ -974,41 +965,41 @@ system.time(
 
 ```{r}
 # # Models
-# saveRDS(object = ug_pop, file = "./ke_pop.rds")
+saveRDS(object = ug_pop, file = "./ke_pop.rds")
+
+# User ratings
+saveRDS(object = ug_recommendations_df,
+        file = "./ug_recommendations_df.rds")
+
+# Popular products
+saveRDS(object = popular_products,
+        file = "./popular_products.rds")
+
+# Product business lines
+saveRDS(product_businesslines, "./product_businesslines.rds")
+
+# Sample of customers to display
+# saveRDS(object = recommendations_detailed_sample,
+#         file = "./recommendations_detailed_sample.rds")
+
+# Ojects for deployment
+saveRDS(object = products_rating_matrix,
+        file = "../../../App/uap_cross_sell/objects/products_rating_matrix.rds")
+
+saveRDS(object = ug_rec_model,
+        file = "../../../App/uap_cross_sell/objects/ug_rec_model.rds")
+
+saveRDS(object = product_businesslines,
+        file = "../../../App/uap_cross_sell/objects/product_businesslines.rds")
 # 
-# # User ratings
-# saveRDS(object = ug_recommendations_df,
-#         file = "./ug_recommendations_df.rds")
+saveRDS(object = unique(ug_recommendations_detailed$ownership),
+        file = "../../../App/uap_cross_sell/objects/ownership.rds")
 # 
-# # Popular products
-# saveRDS(object = popular_products, 
-#         file = "./popular_products.rds")
-# 
-# # Product business lines
-# saveRDS(product_businesslines, "./product_businesslines.rds")
-# 
-# # Sample of customers to display
-# # saveRDS(object = recommendations_detailed_sample, 
-# #         file = "./recommendations_detailed_sample.rds")
-# 
-# # Ojects for deployment
-# saveRDS(object = products_rating_matrix, 
-#         file = "../../../App/uap_cross_sell/objects/products_rating_matrix.rds")
-# 
-# saveRDS(object = ug_rec_model, 
-#         file = "../../../App/uap_cross_sell/objects/ug_rec_model.rds")
-# 
-# saveRDS(object = product_businesslines, 
-#         file = "../../../App/uap_cross_sell/objects/product_businesslines.rds")
-# 
-# saveRDS(object = unique(ug_recommendations_detailed$ownership), 
-#         file = "../../../App/uap_cross_sell/objects/ownership.rds")
-# 
-# # Project image
-# save.image(file = "./04May_Models.RData")
+# Project image
+save.image(file = "./10May_Models.RData")
 
 # Image containing trained model
-load("./04May_Models.RData")
+load("./10May_Models.RData")
 
 ```
 
