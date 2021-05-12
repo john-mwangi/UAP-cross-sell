@@ -276,13 +276,25 @@ Ref: https://www.youtube.com/watch?v=wXEZZ2JT3-k
 
 ```{r}
 zw_sqlite_path <- "../../../App/uap_cross_sell/db/zw_cs.db"
+ke_sqlite_path <- "../../../App/uap_cross_sell/db/ke_cs.db"
+supp_sqlite_path <- "../../../App/uap_cross_sell/db/support.db"
 ```
 
 
 ```{r}
 con_zw <- dbConnect(drv = SQLite(), zw_sqlite_path)
+con_ke <- dbConnect(drv = SQLite(), ke_sqlite_path)
+con_supp <- dbConnect(drv = SQLite(), supp_sqlite_path)
 
 dbListTables(conn = con_zw)
+dbListTables(conn = con_ke)
+dbListTables(conn = con_supp)
+```
+
+```{r}
+tbl(src = con_zw, "product_businesslines")
+tbl(src = con_ke, "product_businesslines")
+tbl(src = con_supp, "support")
 ```
 
 
@@ -290,19 +302,72 @@ dbListTables(conn = con_zw)
 
 Create database tables of required data.
 
+### Detailed recommendations
+
 ```{r}
 copy_to(dest = con_zw, 
         df = zw_recommendations_detailed, 
+        name = "recommendations_detailed",
         overwrite = TRUE, 
         temporary = FALSE)
 ```
 
-Confirm dataframes have been created as database tables
+
+### Product business lines
 
 ```{r}
-dbListTables(conn = con_zw)
+copy_to(dest = con_zw, 
+        df = zw_product_businesslines, 
+        name = "product_businesslines", 
+        overwrite = TRUE, 
+        temporary = FALSE)
+```
 
-tbl(src = con_zw, "zw_recommendations_detailed")
+
+### Product values
+
+```{r}
+copy_to(dest = con_zw, 
+        df = zw_product_values, 
+        name = "product_values", 
+        overwrite = TRUE,
+        temporary = FALSE)
+```
+
+### Support table
+
+```{r}
+support_df <- readRDS(file = "../outputs/support_df.rds")
+
+supp_sqlite_path <- "../../../App/uap_cross_sell/db/support.db"
+
+con_supp <- dbConnect(drv = RSQLite::SQLite(), supp_sqlite_path)
+
+copy_to(dest = con, 
+        df = support_df, 
+        name = "support", 
+        overwrite = TRUE, 
+        temporary = FALSE)
+```
+
+## Confirm tables
+
+```{r}
+dbListTables(conn = con_supp)
+dbListTables(conn = con_zw)
+dbListTables(conn = con_ke)
+```
+
+
+```{r}
+tbl(src = con_zw, "product_values")
+```
+
+
+```{r}
+q <- "UPDATE product_values SET product_value = 99999, accounts = 99999"
+
+DBI::dbSendQuery(conn = con_zw, statement = q)
 ```
 
 
@@ -581,6 +646,8 @@ tbl(src = con_zw, "popular_products") %>%
 
 ## Scenario 5
 
+Ref: https://trumpexcel.com/dependent-drop-down-list-in-excel/
+
 Valid product names.
 
 ```{r}
@@ -652,33 +719,15 @@ predict_on_choices(user_choices = cust_prods_upload, recomm_limit = 3)
 ```{r}
 # Project image
 save.image(file = "./06May_Models.RData")
+load(file = "./06May_Models.RData")
 
 # Ojects for deployment
-saveRDS(object = products_rating_matrix, 
-        file = "../../App/uap_cross_sell/objects/products_rating_matrix.rds")
+saveRDS(object = zw_rec_model, 
+        file = "../../../App/uap_cross_sell/objects/models/Zimbabwe.rds")
 
-saveRDS(object = ke_rec_model, 
-        file = "../../App/uap_cross_sell/objects/ke_rec_model.rds")
-
-saveRDS(object = product_businesslines, 
-        file = "../../App/uap_cross_sell/objects/product_businesslines.rds")
-
-saveRDS(object = unique(ke_recommendations_detailed$ownership), 
-        file = "../../App/uap_cross_sell/objects/ownership.rds")
-
-saveRDS(object = ke_rec_model,
-        file = "../../../App/uap_cross_sell/objects/ke_rec_model.rds")
-
-# Image containing trained model
-load("./05May_Models.RData")
-
-# Ratings
-saveRDS(object = ke_recommendations_df, 
-        file = "../outputs/ratings/ke_recommendations_df.rds")
-
+saveRDS(object = zw_recommendations_detailed,
+        file = "../outputs/zw_recommendations_detailed.rds")
 ```
-
-
 
 
 

@@ -1,0 +1,175 @@
+---
+title: "Support tables"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# SUPPORT TABLE
+
+This table will hold information that cuts across all countries. It will be used for dynamically updating UI elements of the tool. 
+
+This table will contain, for each country:
+* Products under each country
+* Ownership of customers
+
+## Ownership information
+
+```{r}
+ke_ownership <- readRDS(file = "../../../Data Prep/KE/03. Extract additional customer details/outputs/ke_recommendations_detailed.rds") %>% 
+  ungroup() %>% 
+  distinct(ownership) %>% 
+  pull(ownership)
+
+zw_ownership <- readRDS(file = "../outputs/zw_recommendations_detailed.rds") %>% 
+  ungroup() %>% 
+  distinct(ownership) %>% 
+  pull(ownership)
+```
+
+## Product information
+
+```{r}
+ke_products <- readRDS(file = "../../../App/uap_cross_sell/objects/KE/products_rating_matrix.rds") %>% 
+  colnames()
+
+zw_products <- readRDS(file = "../../../App/uap_cross_sell/objects/ZW/products_rating_matrix.rds") %>% 
+  colnames()
+```
+
+
+```{r}
+support_df <-
+rbind(
+  tibble(
+    country = "Zimbabwe",
+    products = zw_products,
+    ownership = c(zw_ownership,
+                  rep(NA, times = length(zw_products) - length(zw_ownership))
+                  )
+    ),
+  
+  tibble(
+    country = "Kenya",
+    products = ke_products,
+    ownership = c(ke_ownership,
+                  rep(NA, times = length(ke_products) - length(ke_ownership))
+                  )
+    )
+  )
+
+support_df
+```
+
+
+## Save into db
+
+```{r}
+sql_path <- "../../../App/uap_cross_sell/db/support.db"
+```
+
+```{r}
+con <- dbConnect(drv = RSQLite::SQLite(), sql_path)
+```
+
+```{r}
+dbListTables(conn = con)
+```
+
+
+```{r}
+copy_to(dest = con, 
+        df = support_df, 
+        name = "support", 
+        overwrite = TRUE, 
+        temporary = FALSE)
+```
+
+
+## Export
+
+```{r}
+saveRDS(object = support_df,
+        file = "../outputs/support_df.rds")
+```
+
+## Tests
+
+### Loading all models at once
+
+```{r}
+#Read model paths
+model_paths <- dir(path = "../../../App/uap_cross_sell/objects/models/",
+    pattern = "*.rds$", 
+    all.files = FALSE, 
+    full.names = TRUE, 
+    recursive = FALSE, 
+    ignore.case = TRUE, 
+    include.dirs = FALSE)
+
+#Extract model names
+model_names <- 
+  str_extract_all(string = model_paths,
+                  pattern = "[a-z]+_rec_model") %>% 
+  unlist()
+
+#Read all models into a named list
+rec_models <- map(.x = model_paths, .f = readRDS)
+names(rec_models) <- model_names
+
+#Assign into environment
+for(model in seq_along(model_names)){
+  assign(x = model_names[model], value = rec_models[[model]])
+}
+
+
+```
+
+### Model & con list
+
+```{r}
+model_con_list <- list(Kenya = c("ke_rec_model","con_ke"),
+                       Zimbabwe = c("zw_rec_model","con_zw"))
+```
+
+
+```{r}
+model_con_list$Kenya[[1]]
+```
+
+
+### Changing connections based on an input value
+
+```{r}
+con_ke <- dbConnect(drv = SQLite(), "../../../App/uap_cross_sell/db/ke_cs.db") 
+con_zw <- dbConnect(drv = SQLite(), "../../../App/uap_cross_sell/db/zw_cs.db") 
+```
+
+Pass it a variable "country" that changes the tbl being returned.
+
+```{r}
+country <- "Kenya"
+
+
+# tbl(src = case_when(country=="Kenya" ~ con_ke,
+#                     TRUE ~ con_zw), 
+#     "ke_recommendations_detailed")
+
+#con_test = case_when(country=="Kenya" ~ con_ke, TRUE ~ con_zw)
+#con_test <- ifelse(country=="Kenya",yes = con_ke, con_zw)
+
+# assign(x = "con_test", con_ke)
+# tbl(src = con_test, "ke_recommendations_detailed")
+# 
+# assign(x = "con_test", if(country=="Kenya") con_ke else con_zw)
+
+if(country=="Kenya") con_test=con_ke else con_test=con_zw
+tbl(src = con_test, "recommendations_detailed")
+```
+
+
+
+
