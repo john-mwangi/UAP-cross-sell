@@ -1,0 +1,300 @@
+---
+title: "Product-Customer Matching"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# PACKAGES
+
+```{r message=FALSE, warning=FALSE}
+library(readxl)
+library(data.table)
+library(tidyverse)
+```
+
+# HEALTH PRODUCTS
+
+Pick product details: product names & customer account number.
+
+```{r}
+health_products_raw <- 
+  fread(file = "../../../../../../Uganda/Health/policydetails_health_uganda.csv")
+```
+
+
+```{r}
+head(health_products_raw)
+```
+
+## Product Holding
+
+The table below returns a table showing products held by each account (1 product, 1 account). n should be 1 in all cases.
+
+```{r}
+health_prod_holding <-
+health_products_raw %>% 
+  distinct(ACCOUNT_NO, `BENEFIT DESCRIPTION`) %>% 
+  count(ACCOUNT_NO,`BENEFIT DESCRIPTION`) %>% 
+  arrange(desc(n))
+
+dim(health_prod_holding)
+```
+
+
+```{r}
+health_prod_holding %>% 
+  count(ACCOUNT_NO) %>% 
+  arrange(desc(n))
+```
+One customer account number can hold more than one product.
+
+```{r}
+health_prod_holding %>% 
+  filter(ACCOUNT_NO=="827120")
+```
+
+
+## Merged Products [FINAL]
+
+Because one customer account number can contain more than one product, we join on the basis of `ACCOUNT_NO` and `Product`.
+
+```{r}
+health_product_holding_final <- health_prod_holding %>% 
+# Exclude rows that were not amended
+# Expect to see Corporate products and Retail products starting with Afya
+  anti_join(health_products_raw %>%
+            select(ACCOUNT_NO, `BENEFIT DESCRIPTION`, COVER_TYPE) %>% 
+            filter(COVER_TYPE=="RETAIL"),  
+            by = c("ACCOUNT_NO", "BENEFIT DESCRIPTION")) %>%
+            rename("Product" = "BENEFIT DESCRIPTION")
+# Include amended rows
+  # bind_rows(health_products_amended)
+
+dim(health_product_holding_final)
+dim(health_prod_holding)
+```
+
+Check if successful.
+
+```{r}
+health_product_holding_final %>% 
+  count(ACCOUNT_NO, Product) %>% 
+  arrange(desc(n))
+```
+
+## Number of products
+
+```{r}
+health_product_holding_final %>% 
+  summarise(n_distinct(Product))
+```
+
+```{r}
+health_product_holding_final %>% 
+  count(Product) %>% 
+  arrange(desc(n))
+```
+
+```{r}
+health_product_holding_final <- health_product_holding_final %>% 
+  mutate(n = replace_na(1))
+```
+
+```{r}
+health_product_holding_final
+```
+
+
+# GI PRODUCTS
+
+Import everything as text.
+
+```{r}
+gi_products_1 <- read_xls(path = "../../../../../../Uganda/GI/policyheader_nonlife_uganda.xls", sheet = 1, col_types = "text")
+
+gi_products_2 <- read_xls(path = "../../../../../../Uganda/GI/policyheader_nonlife_uganda.xls", sheet = 2, col_types = "text")
+
+gi_products_3 <- read_xls(path = "../../../../../../Uganda/GI/policyheader_nonlife_uganda.xls", sheet = 3, col_types = "text")
+```
+
+
+```{r}
+gi_products_raw <-
+bind_rows(gi_products_1, gi_products_2, gi_products_3) %>% 
+  as.data.table()
+
+class(gi_products_raw)
+dim(gi_products_raw)
+head(gi_products_raw)
+```
+
+Clean up the memory.
+
+```{r}
+rm(gi_products_1, gi_products_2, gi_products_3)
+```
+
+## Records to exclude
+
+Field of interest: Policy Type (product), Account Number (proxy for customer number)
+
+```{r}
+gi_products_raw %>% 
+  select(POLICY_TYPE, ACCOUNT_NO, ) %>% 
+  mutate(null = is.na(ACCOUNT_NO)) %>% 
+  count(null) %>% 
+  mutate(prop = n/sum(n))
+```
+
+Check the distribution of how products have been purchased. We exclude products that have been purchased less than 10 times.
+
+```{r}
+gi_products_raw %>% 
+  count(POLICY_TYPE) %>% 
+  summary()
+```
+
+```{r}
+insufficient_gi_purchases <-
+gi_products_raw %>% 
+  count(POLICY_TYPE) %>% 
+  filter(n<10) %>% 
+  pull(POLICY_TYPE)
+
+insufficient_gi_purchases
+```
+
+
+## Product Holding
+
+We exclude the following records:
+* Those without Account Numbers
+* Invalid account numbers (less than 4 characters in length)
+* Products purchased less than 10 times
+* Health products (health, medical)
+* Life products (Accident, Work, Maxpac, Wiba)
+
+```{r}
+gi_product_holding <-
+gi_products_raw %>% 
+  mutate(POLICY_TYPE = str_trim(POLICY_TYPE),
+         ACCOUNT_NO = str_trim(ACCOUNT_NO)) %>% 
+  filter(!is.na(ACCOUNT_NO)) %>%
+  filter(!str_length(ACCOUNT_NO) < 4) %>% 
+  filter(!POLICY_TYPE %in% insufficient_gi_purchases) %>% 
+  filter(!str_detect(string = POLICY_TYPE, pattern = "HEALTH")) %>% 
+  filter(!str_detect(string = POLICY_TYPE, pattern = "MEDICAL")) %>%
+  filter(!str_detect(string = POLICY_TYPE, pattern = "ACCIDENT")) %>%
+  filter(!str_detect(string = POLICY_TYPE, pattern = "WORK")) %>%
+  filter(!str_detect(string = POLICY_TYPE, pattern = "MAXPAC")) %>%
+  filter(!str_detect(string = POLICY_TYPE, pattern = "WIBA")) %>%
+  distinct(ACCOUNT_NO, POLICY_TYPE) %>% 
+  count(ACCOUNT_NO, POLICY_TYPE)
+
+dim(gi_product_holding)
+head(gi_product_holding)
+```
+
+Number of products
+
+```{r}
+length(unique(gi_product_holding$POLICY_TYPE))
+
+gi_product_holding %>% 
+  distinct(POLICY_TYPE)
+```
+
+```{r}
+gi_product_holding_final <- gi_product_holding
+```
+
+# GROUP CUSTOMER IDENTIFIER
+
+* Health - Account Number (in products)
+* GI - Account Number
+
+## Way forward
+
+We proceed with Health and GI
+
+## Match Account Numbers
+
+Health and Asset Management.
+
+```{r}
+length(unique(health_product_holding_final$ACCOUNT_NO))
+
+length(unique(gi_product_holding_final$ACCOUNT_NO))
+```
+Some Account Numbers in Health and GI match?
+
+First, change the format of account number in GI dataset to match that of Health. 
+
+```{r}
+gi_product_holding_accts_chopped <- gi_product_holding_final %>%
+  mutate(ACCOUNT_NO = str_sub(ACCOUNT_NO, 6, -1)) 
+
+gi_product_holding_accts_chopped$ACCOUNT_NO = as.integer(gi_product_holding_accts_chopped$ACCOUNT_NO)
+```
+
+```{r}
+length(
+    intersect(
+      unique(health_product_holding_final$ACCOUNT_NO),
+      unique(gi_product_holding_accts_chopped$ACCOUNT_NO)))
+```
+
+## Conclusion
+
+Account Number (in products) can be a common unique customer identifier between Health and Asset Management.
+
+
+# LIMITATIONS
+
+1. Health: It is not possible to link an individual policy to the customer master.
+
+
+# EXPORT
+
+```{r}
+save.image(file = "./10May-Customer_Matching.RData")
+load("10May-Customer_Matching.RData")
+```
+
+
+```{r}
+#Create product_holding directory
+# dir.create("../../product_holding/")
+# Health product holdings
+saveRDS(object = health_product_holding_final, 
+        file = "../../product_holding/health_product_holding_final.rds")
+
+# General insurance product holding
+saveRDS(object = gi_product_holding_final, 
+        file = "../../product_holding/gi_product_holding_final.rds")
+
+# General insurance product holding
+saveRDS(object = gi_product_holding_accts_chopped, 
+        file = "../../product_holding/gi_product_holding_acct_no_formatted.rds")
+
+# GI Accounts
+saveRDS(object = gi_products_raw,
+        file = "../../product_holding/gi_products_raw.rds")
+
+# Project image
+save.image(file = "./10May_Product_Cust_Matching.RData")
+load("10May_Product_Cust_Matching.RData")
+```
+
+
+
+
+
+
+
+
+
