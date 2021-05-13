@@ -7,6 +7,26 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+# PACKAGES
+
+```{r message=FALSE, warning=FALSE}
+rm(list = ls())
+
+library(readxl)
+library(lubridate)
+library(tidyverse)
+```
+
+
+# PRODUCT BUSINESS LINES
+
+```{r}
+product_businesslines_raw <- readRDS("../outputs/product_businesslines.rds")
+
+product_businesslines_raw
+```
+
+
 # ASSET MGT
 
 Tie values in the statements to product names in the customer datasets.
@@ -37,23 +57,151 @@ read.csv(
 
 # LIFE INSURANCE
 
+## Product values
+
+```{r}
+life_product_values <-
+read.csv(
+  file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/statement_life_insurance.oipa.csv") %>%
+  filter(PAYMENT_PAID > 0) %>% 
+  mutate(TRANSACTION_DATE = ymd(TRANSACTION_DATE)) %>% 
+  filter(TRANSACTION_DATE >= "2018-01-01") %>% 
+  select(PRODUCT,PAYMENT_PAID,TRANSACTION_TYPE,TRANSACTION_DATE) %>% 
+  group_by(PRODUCT) %>%
+  summarise(product_value = mean(PAYMENT_PAID),
+            accounts = n())
+
+life_product_values
+```
+
+# GENERAL INSURANCE
+
 ## Statements
 
 ```{r}
-life_statements <-
-read.csv(
-  file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/statement_life_insurance.oipa.csv",
-  sep = ";")
+gi_prod_vals_raw <-
+read_csv(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/statement_general_insurance.csv") %>% 
+  mutate(TRANSACTION_DATE = ymd(TRANSACTION_DATE)) %>% 
+  filter(TRANSACTION_DATE >= "2018-01-01") %>% 
+  filter(PREMIUM_AMOUNT > 0) %>% 
+  select(POLICY_PRODUCT_TYPE, PREMIUM_AMOUNT, TRANSACTION_TYPE)
+
+gi_prod_vals_raw
 ```
-
-## Product details
-
-`ACCOUNT_NUMBER` cannot be used as a product identifier.
+## Product names
 
 ```{r}
-read.csv(
-  file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_life_insurance.oipa.csv",
-  sep = ";") %>% 
-  filter(ACCOUNT_NUMBER=="11002001")
+gi_product_names <-
+readxl::read_excel(
+  path = "../../../../../../C - Documentation/Data/festus_extraction/ZW/supp_product_details.xlsx",
+  sheet = "GI") %>% 
+  select(STATUS,DESCRIPTION)
+
+gi_product_names
+```
+
+## Product values
+
+```{r}
+gi_product_values <-
+gi_prod_vals_raw %>% 
+  left_join(gi_product_names, by = c("POLICY_PRODUCT_TYPE"="STATUS")) %>% 
+  select(-POLICY_PRODUCT_TYPE) %>% 
+  rename(PRODUCT = DESCRIPTION) %>% 
+  relocate(PRODUCT, .before = everything()) %>% 
+  group_by(PRODUCT) %>% 
+  summarise(product_value = mean(PREMIUM_AMOUNT),
+            accounts = n())
+
+gi_product_values
+```
+
+
+# LENDING
+
+## Products values
+
+```{r}
+lending_product_values <-
+read_csv(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/statement_lending.csv") %>% 
+  mutate(income = total_repaid - principal) %>% 
+  filter(income > 0) %>% 
+  select(PRODUCT = product_name, income) %>% 
+  group_by(PRODUCT) %>% 
+  summarise(product_value = mean(income),
+            accounts = n())
+
+lending_product_values
+```
+
+# ALL PRODUCTS
+
+```{r}
+product_values_raw <-
+rbind(life_product_values,
+      gi_product_values,
+      lending_product_values)
+
+product_values_raw
+```
+
+
+# MISSING
+
+Check that all products have assigned product values.
+
+## Fix Lending products
+
+```{r}
+lending_full_names <-
+read_excel(
+  path = "../../../../../../C - Documentation/Data/festus_extraction/ZW/supp_product_details.xlsx",
+  sheet = "Lending") %>% 
+  janitor::clean_names()
+
+lending_full_names
+```
+
+
+```{r}
+product_businesslines <-
+product_businesslines_raw %>% 
+  left_join(lending_full_names, 
+            by = c("PRODUCT"="abbreviation")) %>% 
+  mutate(full_name = coalesce(full_name,PRODUCT)) %>% 
+  select(PRODUCT = full_name,BUSINESS_LINE)
+
+product_businesslines
+```
+
+
+## Imputation
+
+```{r}
+product_businesslines %>% 
+  left_join(product_values) %>% 
+  filter(is.na(product_value))
+```
+
+
+```{r}
+product_values <-
+product_businesslines %>% 
+  left_join(product_values, by = "PRODUCT") %>% 
+  group_by(BUSINESS_LINE) %>%
+  mutate(product_value = replace_na(product_value, 
+                                    mean(product_value, na.rm = TRUE))) %>% 
+  ungroup()
+
+product_values
+```
+
+# EXPORT
+
+```{r}
+save.image("../13May_Product_Values.RData")
+
+saveRDS(product_businesslines, "../outputs/product_businesslines_final.rds")
+saveRDS(product_values,"../outputs/product_values.rds")
 ```
 

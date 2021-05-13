@@ -8,7 +8,9 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 
-```{r}
+```{r message=FALSE, warning=FALSE}
+rm(list = ls())
+
 library(recommenderlab)
 library(tidyverse)
 ```
@@ -17,25 +19,48 @@ library(tidyverse)
 # Import Data
 
 ```{r}
-asset_product_holding <- readRDS(file = "../../01. Determine product holding/outputs/objects/asset_product_holding.rds")
+asset_product_holding <- readRDS(file = "../../01. Determine product holding/outputs/objects/asset_product_holding.rds") %>% 
+  rename(ACCOUNT_NO = ACCOUNT_NUMBER)
 
-life_product_holding <- readRDS(file = "../../01. Determine product holding/outputs/objects/life_product_holding.rds")
+life_product_holding <- readRDS(file = "../../01. Determine product holding/outputs/objects/life_product_holding.rds") %>% 
+  rename(ACCOUNT_NO = CUSTOMER_NUMBER)
+
+gi_product_holding <- readRDS(file = "../../01. Determine product holding/outputs/objects/gi_product_holding.rds") %>% 
+  rename(ACCOUNT_NO = CUSTOMER_NO,
+         PRODUCT = DESCRIPTION)
+
+lending_product_holding <- readRDS("../../01. Determine product holding/outputs/objects/lending_product_holding.rds") %>% 
+  rename(ACCOUNT_NO = account_no,
+         PRODUCT = product)
 ```
-
 
 
 # Merge the tables
 
 ```{r}
 products_df_raw <-
-asset_product_holding %>% 
-  rename(ACCOUNT_NO = ACCOUNT_NUMBER) %>% 
-  bind_rows(life_product_holding %>% 
-              rename(ACCOUNT_NO = CUSTOMER_NUMBER))
+rbind(asset_product_holding,
+      life_product_holding,
+      gi_product_holding,
+      lending_product_holding)
 
-dim(products_df_raw)
 products_df_raw
 ```
+
+# Change values to either 0 or 1
+
+```{r}
+products_df_raw %>% 
+  count(n)
+
+products_df_raw <-
+products_df_raw %>% 
+  distinct(ACCOUNT_NO, PRODUCT) %>% 
+  count(ACCOUNT_NO, PRODUCT)
+
+products_df_raw
+```
+
 
 # Overall product holding
 
@@ -57,7 +82,10 @@ products_df_raw %>%
   #scale_y_log10(labels = scales::comma_format())+
   scale_x_continuous(breaks = c(1,2),
                      labels = c(1,"+2"))+
-  stat_bin(binwidth=1, geom="text", aes(label=..count..), vjust=0.25)+
+  stat_bin(binwidth=1, 
+           geom="text", 
+           aes(label=paste0(..count..,"/",round(..count../sum(..count..), 2))), 
+           vjust=0.25)+
   labs(title = "Distribution of product purchases",
        x = "Purchases",
        y = "Purchase Frequency")
@@ -106,7 +134,7 @@ rownames(products_matrix) <- products_df %>% pull(ACCOUNT_NO)
 
 ```{r}
 rownames(products_matrix)[1:10]
-colnames(products_matrix)
+colnames(products_matrix)[1:10]
 ```
 
 
@@ -126,6 +154,8 @@ class(products_rating_matrix)
 It should be indicated on the app that:
 * Asset Mgt: Account No = ACCOUNT_NUMBER
 * Life Ins: Account No = CUSTOMER_NUMBER
+* General Ins: Account No = CUSTOMER_NO
+* Lending: Account No = account_no
 
 # Export
 
@@ -133,7 +163,7 @@ It should be indicated on the app that:
 saveRDS(object = products_rating_matrix, 
         file = "../outputs/products_rating_matrix.rds")
 
-save.image("./05May_RatingMatrix.RData")
-#load("./20Apr_RatingMatrix.RData")
+save.image("./13May_RatingMatrix.RData")
+load("./05May_RatingMatrix.RData")
 ```
 

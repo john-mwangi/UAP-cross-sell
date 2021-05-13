@@ -10,6 +10,8 @@ knitr::opts_chunk$set(echo = TRUE)
 # PACKAGES
 
 ```{r message=FALSE, warning=FALSE}
+rm(list = ls())
+
 library(recommenderlab)
 library(glue)
 library(data.table)
@@ -19,6 +21,8 @@ library(tidyverse)
 ```
 
 # OBJECTIVE
+
+When hovering on a customer in the app, it should display whether a customer is intermediated (and agent code) and product details (number and name of products).
 
 Extract the following details:
 * Agent code tied to a customer
@@ -65,21 +69,51 @@ read.csv(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/c
 life_customers_raw
 ```
 
+## General Insurance
+
+`CUSTOMER_NO` is the customer identifier.
+
+```{r}
+gi_customers_raw <-
+read.csv(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_general_insurance.csv") %>% 
+  select(ACCOUNT_NO = CUSTOMER_NO,AGENT_CODE) %>% 
+  mutate(intermediated = if_else(condition = is.na(AGENT_CODE), 
+                                 true = "No", 
+                                 false = "Yes"))
+
+gi_customers_raw
+```
+
+## Lending
+
+`account_no` is the customer identifier.
+
+```{r}
+lending_customers_raw <-
+read_csv(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_lending.csv") %>% 
+  select(ACCOUNT_NO = account_no) %>% 
+  mutate(AGENT_CODE = NA,
+         intermediated = "No")
+
+lending_customers_raw
+```
+
+
 ## Customer agents
 
 ```{r}
 customer_agents <-
-rbind(
-  asset_customers_raw,
-  life_customers_raw
-) %>% 
+rbind(asset_customers_raw,
+      life_customers_raw,
+      gi_customers_raw,
+      lending_customers_raw) %>% 
   distinct(ACCOUNT_NO, .keep_all = TRUE)
 
 customer_agents
 ```
 
 
-# PRODUCTS HELD
+# ACCOUNT INFO
 
 Across the subsidiary
 
@@ -88,6 +122,8 @@ Across the subsidiary
 ```{r}
 products_rating_matrix <-
 readRDS(file = "../../02. Create rating matrices/outputs/products_rating_matrix.rds")
+
+dim(products_rating_matrix)
 ```
 
 
@@ -101,9 +137,12 @@ as(products_rating_matrix, "data.frame") %>%
 product_count
 ```
 
+
 ## Customer products
 
 ```{r}
+gc()
+
 customer_products <-
 as(products_rating_matrix, "data.frame") %>% 
   group_by(user) %>% 
@@ -119,25 +158,36 @@ customer_products
 Define business lines to which products belong to.
 
 ```{r}
-asset_product_holding <-
-readRDS(file = "../../01. Determine product holding/outputs/objects/asset_product_holding.rds")
+asset_products <-
+readRDS(file = "../../01. Determine product holding/outputs/objects/asset_product_holding.rds") %>% 
+  distinct(PRODUCT) %>%
+  mutate(BUSINESS_LINE = "Asset")
 
-life_product_holding <-
-readRDS(file = "../../01. Determine product holding/outputs/objects/life_product_holding.rds")
+life_products <-
+readRDS(file = "../../01. Determine product holding/outputs/objects/life_product_holding.rds") %>% 
+  distinct(PRODUCT) %>%
+  mutate(BUSINESS_LINE = "Life")
+
+gi_products <-
+readRDS(file = "../../01. Determine product holding/outputs/objects/gi_product_holding.rds") %>% 
+  select(PRODUCT = DESCRIPTION) %>% 
+  distinct(PRODUCT) %>%
+  mutate(BUSINESS_LINE = "General")
+
+lending_products <-
+readRDS(file = "../../01. Determine product holding/outputs/objects/lending_product_holding.rds") %>% 
+  select(PRODUCT = product) %>% 
+  distinct(PRODUCT) %>%
+  mutate(BUSINESS_LINE = "Lending")
 ```
 
 
 ```{r}
 product_businesslines <-
-bind_rows(
-  asset_product_holding %>% 
-    distinct(PRODUCT) %>%
-    mutate(BUSINESS_LINE = "Asset"),
-  
-  life_product_holding %>% 
-    distinct(PRODUCT) %>% 
-    mutate(BUSINESS_LINE = "Life")
-)
+rbind(asset_products,
+      life_products,
+      gi_products,
+      lending_products)
 
 product_businesslines
 ```
@@ -156,7 +206,6 @@ as(products_rating_matrix, "data.frame") %>%
 customer_ownership
 ```
 
-
 ## Account info
 
 ```{r}
@@ -167,21 +216,24 @@ customer_products %>%
 
 account_info
 ```
+
 ## Checks
 
 ```{r}
 account_info %>% 
-  filter(product_count>1) %>% 
-  arrange(desc(product_count)) %>% 
-  head()
+  ungroup() %>% 
+  filter(str_detect(ownership,",")) %>% 
+  count(ownership)
 ```
 
 # CUSTOMER DETAILS
 
-Merge account info with agent information.
+Merge account and agent information.
 
 ```{r}
 rm(customer_details_final)
+
+gc()
 
 job::job({
 customer_details_final <-
@@ -193,7 +245,10 @@ account_info %>%
                                  .na = "Not Found")) %>% 
   select(-AGENT_CODE,-product_count,-products)
 }, title = "Customer details")
+```
 
+
+```{r}
 customer_details_final
 ```
 
@@ -210,7 +265,7 @@ saveRDS(product_businesslines,"../outputs/product_businesslines.rds")
 
 
 # Project image
-save.image("./05May_Customer_details.RData")
+save.image("./13May_Customer_details.RData")
 load("./05May_Customer_details.RData")
 ```
 
