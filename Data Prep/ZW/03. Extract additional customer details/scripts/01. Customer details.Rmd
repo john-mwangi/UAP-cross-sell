@@ -243,7 +243,8 @@ account_info %>%
                                  Product Holding:{product_count}
                                  Current Products:{products}", 
                                  .na = "Not Found")) %>% 
-  select(-AGENT_CODE,-product_count,-products)
+  select(-AGENT_CODE,-product_count,-products) %>% 
+  ungroup()
 }, title = "Customer details")
 ```
 

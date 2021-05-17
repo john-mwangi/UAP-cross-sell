@@ -61,7 +61,7 @@ sidebarLayout(
                                              selectInput(inputId = "intermediated",
                                                          label = "Intermediated", 
                                                          choices = c("Yes","No"), 
-                                                         selected = "Yes",
+                                                         selected = "No",
                                                          multiple = FALSE)),
                                       column(width = 3,
                                              selectInput(inputId = "ownership", 

@@ -5,6 +5,8 @@ library(DBI)
 library(RSQLite)
 library(tidyverse)
 
+round_off <- 3
+
 shinyServer(function(input, output, session) {
   
   ##======== FIREBASE AUTHENTICATION============
@@ -106,7 +108,9 @@ shinyServer(function(input, output, session) {
   db_con = reactive({
     switch(EXPR = input$country,
            "Kenya" = con <- con_ke,
-           "Zimbabwe" = con <- con_zw)
+           "Zimbabwe" = con <- con_zw,
+           stop("Invalid country name")
+           )
     
     return(list(con=con))
   })
@@ -134,7 +138,6 @@ shinyServer(function(input, output, session) {
   })
   
   ### load predictive models ===================
-  #ke_rec_model <- readRDS("./objects/models/ke_rec_model.rds")
   
   ### Create prediction function ================
   predict_on_choices <- function(user_choices, recomm_limit){
@@ -179,14 +182,14 @@ shinyServer(function(input, output, session) {
       rename(PRODUCT = item) %>%
       left_join(tbl(src = db_con()$con, "product_businesslines") %>% collect(),
                 by = "PRODUCT") %>% 
-      relocate(BUSINESS_LINE, .after = PRODUCT) %>% 
-      left_join(tbl(src = db_con()$con, "product_values") %>% collect(), 
+      left_join(tbl(src = db_con()$con, "product_values") %>% collect(),
                 by = "PRODUCT") %>% 
+      relocate(BUSINESS_LINE, .after = PRODUCT) %>% 
       group_by(BUSINESS_LINE) %>% 
       arrange(desc(rating), .by_group = TRUE) %>% 
       slice(1:recomm_limit) %>% 
       select(-accounts) %>% 
-      mutate(rating = round(rating, 3)) %>% 
+      mutate(rating = round(rating, round_off)) %>% 
       rename(value = product_value) %>% 
       setNames(str_to_upper(colnames(.)))
     
@@ -208,8 +211,8 @@ shinyServer(function(input, output, session) {
       collect() %>% 
       slice(1:input$recomm_limit) %>% 
       arrange(desc(max_rating)) %>% 
-      mutate(max_rating = round(max_rating,3),
-             rating = round(rating,3)) %>% 
+      mutate(max_rating = round(max_rating, round_off),
+             rating = round(rating, round_off)) %>% 
       rename(inter = intermediated,
              value = product_value) %>% 
       setNames(str_to_upper(colnames(.)))
@@ -235,8 +238,8 @@ shinyServer(function(input, output, session) {
       collect() %>% 
       slice(1:input$recomm_limit) %>%
       head(1000) %>% 
-      mutate(max_rating = round(max_rating,3),
-             rating = round(rating,3)) %>%
+      mutate(max_rating = round(max_rating, round_off),
+             rating = round(rating, round_off)) %>%
       rename(inter = intermediated,
              value = product_value) %>% 
       setNames(str_to_upper(colnames(.)))
@@ -287,8 +290,8 @@ shinyServer(function(input, output, session) {
       collect() %>% 
       slice(1:input$recomm_limit) %>% 
       arrange(desc(max_rating)) %>%
-      mutate(max_rating = round(max_rating,3),
-             rating = round(rating,3)) %>%
+      mutate(max_rating = round(max_rating, round_off),
+             rating = round(rating, round_off)) %>%
       rename(inter = intermediated,
              value = product_value) %>% 
       setNames(str_to_upper(colnames(.)))

@@ -10,6 +10,8 @@ knitr::opts_chunk$set(echo = TRUE)
 # PACKAGES
 
 ```{r message=FALSE, warning=FALSE}
+rm(list = ls())
+
 library(recommenderlab)
 library(DBI)
 library(RSQLite)
@@ -25,6 +27,8 @@ library(tidyverse)
 ```{r}
 products_rating_matrix <-
 readRDS(file = "../../../Data Prep/ZW/02. Create rating matrices/outputs/products_rating_matrix.rds")
+
+dim(products_rating_matrix)
 ```
 
 Train-test split. Since most customers hold just one product, a cross-validated training cannot be done.
@@ -72,7 +76,6 @@ evaluate(x = es,
          method = algorithms,
          type = "topNList",
          n = seq(1,10,1))
-         #n = c(1,3,5,10))
 
 doParallel::stopImplicitCluster()
 
@@ -95,7 +98,6 @@ Recall: Out of all the recommendations returned by the tool, were all relevant r
 names(ev_list)
 ```
 
-**Based on the results below, we will deploy an IBCF model**
 
 ```{r}
 plot(x = ev_list, y = "prec/rec", annotate=TRUE, legend="topleft")
@@ -152,8 +154,8 @@ Using matrices.
 ```{r}
 zw_ibcf_mat <- 
   predict(object = zw_ibcf,
-                       newdata = products_rating_matrix,
-                       type = "ratings") %>% 
+          newdata = products_rating_matrix,
+          type = "ratings") %>% 
   as("matrix")
 
 ```
@@ -162,8 +164,8 @@ zw_ibcf_mat <-
 ```{r}
 zw_pop_mat <- 
   predict(object = zw_pop,
-                      newdata = products_rating_matrix,
-                      type = "ratings") %>% 
+          newdata = products_rating_matrix,
+          type = "ratings") %>% 
   as("matrix")
 ```
 
@@ -179,16 +181,17 @@ zw_hyb_mat = (zw_ibcf_mat*0.9) + (zw_pop_mat*0.1)
 
 
 ```{r}
-zw_hyb_mat[1:2,]
+zw_hyb_mat[1:2,1:5]
 ```
 
 Comparison of results...
 
 ```{r}
 predict(object = zw_hyb, 
-        newdata = products_rating_matrix[1:2], 
+        newdata = products_rating_matrix[1:2,], 
         type = "ratings") %>% 
-  as("data.frame")
+  as("data.frame") %>% 
+  filter(item %in% colnames(products_rating_matrix)[1:5])
 ```
 
 ### Ratings
@@ -205,8 +208,6 @@ zw_hyb_mat %>%
 
 zw_recommendations
 ```
-
-
 ## Add business lines
 
 Add product business lines to ratings.
@@ -214,8 +215,9 @@ Add product business lines to ratings.
 ```{r}
 product_businesslines <-
 readRDS(file = "../../../Data Prep/ZW/03. Extract additional customer details/outputs/product_businesslines.rds")
-```
 
+product_businesslines
+```
 
 ```{r}
 zw_recommendations_proc <-
@@ -225,11 +227,13 @@ zw_recommendations %>%
 zw_recommendations_proc
 ```
 
-## Add max rating, arrange & group columns
+
+## Add max rating, arrange
 
 * Add maximum product rating per customer
 * Sort by max rating and rating per customer
 * Group data by customer and business line
+* Limit to top 5 recommendations per customer per business line
 
 ```{r}
 zw_recommendations_df <-
@@ -239,32 +243,56 @@ zw_recommendations_proc %>%
   arrange(desc(max_rating),
           desc(rating), .by_group = TRUE) %>% 
   ungroup() %>%
-  group_by(ACCOUNT_NO, BUSINESS_LINE)
+  group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
+  slice(1:5)
 
 zw_recommendations_df
 ```
 
+## Add product values
 
-## Add customer details
+```{r}
+product_values <-
+readRDS(file = "../../../Data Prep/ZW/03. Extract additional customer details/outputs/product_values.rds")
+
+product_values
+```
+
+```{r}
+zw_recommendations_df_proc <-
+zw_recommendations_df %>% 
+  left_join(product_values, by = c("PRODUCT"="PRODUCT")) %>% 
+  select(-accounts)
+
+zw_recommendations_df_proc
+```
+
+
+## Add customer details & grouping
 
 Merge ratings with customer details.
 
 ```{r}
 customer_details_final <-
-readRDS(file = "../../../Data Prep/ZW/03. Extract additional customer details/outputs/customer_details_final.rds")
+readRDS(file = "../../../Data Prep/ZW/03. Extract additional customer details/outputs/customer_details_final.rds") %>% 
+  ungroup()
 
 customer_details_final
 ```
 
 
 ```{r}
+table_order <- c(ACCOUNT_NO, PRODUCT, BUSINESS_LINE, rating, max_rating, ownership, intermediated, product_value, customer_details)
+
 zw_recommendations_detailed <-
-zw_recommendations_df %>% 
-  left_join(customer_details_final, by = "ACCOUNT_NO")
+zw_recommendations_df_proc %>% 
+  left_join(customer_details_final, by = "ACCOUNT_NO") %>% 
+  relocate(BUSINESS_LINE, .after = PRODUCT) %>% 
+  group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
+  select(table_order)
 
 zw_recommendations_detailed
 ```
-
 
 # CREATE DATABASE
 
@@ -276,27 +304,24 @@ Ref: https://www.youtube.com/watch?v=wXEZZ2JT3-k
 
 ```{r}
 zw_sqlite_path <- "../../../App/uap_cross_sell/db/zw_cs.db"
-ke_sqlite_path <- "../../../App/uap_cross_sell/db/ke_cs.db"
-supp_sqlite_path <- "../../../App/uap_cross_sell/db/support.db"
-```
-
-
-```{r}
 con_zw <- dbConnect(drv = SQLite(), zw_sqlite_path)
-con_ke <- dbConnect(drv = SQLite(), ke_sqlite_path)
-con_supp <- dbConnect(drv = SQLite(), supp_sqlite_path)
-
-dbListTables(conn = con_zw)
-dbListTables(conn = con_ke)
-dbListTables(conn = con_supp)
 ```
 
 ```{r}
-tbl(src = con_zw, "product_businesslines")
-tbl(src = con_ke, "product_businesslines")
-tbl(src = con_supp, "support")
+#ke_sqlite_path <- "../../../App/uap_cross_sell/db/ke_cs.db"
+#con_ke <- dbConnect(drv = SQLite(), ke_sqlite_path)
 ```
 
+```{r}
+#supp_sqlite_path <- "../../../App/uap_cross_sell/db/support.db"
+#con_supp <- dbConnect(drv = SQLite(), supp_sqlite_path)
+```
+
+```{r}
+dbListTables(conn = con_zw)
+#dbListTables(conn = con_ke)
+#dbListTables(conn = con_supp)
+```
 
 ## Database tables
 
@@ -313,11 +338,20 @@ copy_to(dest = con_zw,
 ```
 
 
+```{r}
+dim(zw_recommendations_detailed)
+
+tbl(src = con_zw, "recommendations_detailed") %>% 
+  collect() %>% 
+  dim()
+```
+
+
 ### Product business lines
 
 ```{r}
 copy_to(dest = con_zw, 
-        df = zw_product_businesslines, 
+        df = product_businesslines, 
         name = "product_businesslines", 
         overwrite = TRUE, 
         temporary = FALSE)
@@ -328,43 +362,29 @@ copy_to(dest = con_zw,
 
 ```{r}
 copy_to(dest = con_zw, 
-        df = zw_product_values, 
+        df = product_values, 
         name = "product_values", 
         overwrite = TRUE,
         temporary = FALSE)
 ```
 
-### Support table
-
-```{r}
-support_df <- readRDS(file = "../outputs/support_df.rds")
-
-supp_sqlite_path <- "../../../App/uap_cross_sell/db/support.db"
-
-con_supp <- dbConnect(drv = RSQLite::SQLite(), supp_sqlite_path)
-
-copy_to(dest = con, 
-        df = support_df, 
-        name = "support", 
-        overwrite = TRUE, 
-        temporary = FALSE)
-```
 
 ## Confirm tables
 
 ```{r}
-dbListTables(conn = con_supp)
+#dbListTables(conn = con_supp)
 dbListTables(conn = con_zw)
-dbListTables(conn = con_ke)
+#dbListTables(conn = con_ke)
 ```
 
 
 ```{r}
-tbl(src = con_zw, "product_values")
+tbl(src = con_zw, "recommendations_detailed")
 ```
 
 
-```{r}
+```{r eval=FALSE, include=FALSE}
+# Not required
 q <- "UPDATE product_values SET product_value = 99999, accounts = 99999"
 
 DBI::dbSendQuery(conn = con_zw, statement = q)
@@ -410,13 +430,11 @@ zw_recommendations_detailed %>%
 Database replication of the above results.
 
 ```{r}
-tbl(src = con_zw, "zw_recommendations_detailed") %>%
+tbl(src = con_zw, "recommendations_detailed") %>%
   filter(ACCOUNT_NO %in% records) %>%
-  group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
-  arrange(desc(rating)) %>% 
+  group_by(ACCOUNT_NO, BUSINESS_LINE) %>%
   collect() %>% 
-  slice(1:3) %>% 
-  arrange(desc(max_rating))
+  slice(1:3)
 ```
 
 
@@ -436,25 +454,34 @@ We allow the end-user get the top n recommended customers based on this criteria
 
 ```{r}
 zw_recommendations_detailed %>% 
+  ungroup() %>% 
   filter(intermediated=="No") %>% 
-  filter(ownership=="Asset") %>% 
-  slice(1:3) %>% 
-  head(1000)
+  count(ownership)
 ```
+
+
+```{r}
+zw_recommendations_detailed %>% 
+  filter(intermediated=="No") %>% 
+  filter(ownership=="Lending") %>% 
+  filter(product_value>=50000) %>% 
+  filter(product_value<=200000) %>% 
+  slice(1:3)
+ #head(1000)
+```
+
 ### Database
 
 ```{r}
-tbl(src = con, "ke_recommendations_detailed") %>% 
-  group_by(ACCOUNT_NO, BUSINESS_LINE) %>%
+tbl(src = con_zw, "recommendations_detailed") %>%
+  group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
   filter(intermediated=="No") %>% 
-  filter(ownership=="General") %>% 
-  filter(product_value >= 50000 & product_value <= 200000) %>% 
-  arrange(desc(max_rating),
-          desc(rating),
-          .by_group = TRUE) %>% 
+  filter(ownership=="Lending") %>% 
+  filter(product_value >= 50000) %>% 
+  filter(product_value <= 200000) %>% 
   collect() %>% 
-  slice(1:3) %>% 
-  head(1000)
+  slice(1:3)
+  #head(1000)
 ```
 
 
@@ -464,7 +491,7 @@ Include additional products on top of what one has purchased and return 3 recomm
 
 ### Procedure
 
-Capture user selections.
+Capture user selections. One product from each business line.
 
 ```{r}
 user_choices <-
@@ -534,11 +561,13 @@ user_choice_recommendations <-
 
 ```{r}
 as(user_choice_recommendations, "data.frame") %>% 
-  rename(PRODUCT = item) %>%
+  rename(PRODUCT = item) %>% 
   left_join(product_businesslines, by = "PRODUCT") %>% 
+  left_join(product_values, by = "PRODUCT") %>% 
   relocate(BUSINESS_LINE, .after = PRODUCT) %>% 
   group_by(BUSINESS_LINE) %>% 
-  arrange(desc(rating), .by_group = TRUE) %>% 
+  arrange(desc(rating), .by_group = TRUE) %>%
+  select(-accounts) %>% 
   slice(1:3)
 ```
 
@@ -584,12 +613,12 @@ user_choice_recommendations_df <-
 as(user_choice_recommendations, "data.frame") %>% 
   rename(PRODUCT = item) %>%
   left_join(product_businesslines, by = "PRODUCT") %>% 
+  left_join(product_values, by = "PRODUCT") %>% 
   relocate(BUSINESS_LINE, .after = PRODUCT) %>% 
   group_by(BUSINESS_LINE) %>% 
   arrange(desc(rating), .by_group = TRUE) %>% 
-  slice(1:recomm_limit)
-  # left_join(tbl(src = con, "product_values") %>% collect(), 
-  #           by = "PRODUCT") %>% 
+  slice(1:recomm_limit) %>% 
+  select(-accounts)
 
 return(user_choice_recommendations_df)
 }
@@ -660,17 +689,22 @@ tibble(PRODUCTS = colnames(products_rating_matrix)) %>%
 
 ```{r}
 acc_nums_upload <- 
-  readxl::read_excel(path = "./cs_upload_template.xlsx",
-                     sheet = "customer_acc") %>% 
+  readxl::read_excel(
+    path = "../../../App/uap_cross_sell/www/files/cs_upload_template.xlsx",
+    sheet = "customer_acc") %>% 
   distinct(ACCOUNT_NO) %>% 
   mutate(ACCOUNT_NO = as.character(ACCOUNT_NO)) %>% 
   pull(ACCOUNT_NO)
 
 cust_prods_upload <- 
-  readxl::read_excel(path = "./cs_upload_template.xlsx", 
-                     sheet = "customer_prod") %>% 
+  readxl::read_excel(
+    path = "../../../App/uap_cross_sell/www/files/cs_upload_template.xlsx",
+    sheet = "customer_prod") %>% 
   distinct(PRODUCT) %>% 
   pull(PRODUCT)
+
+acc_nums_upload
+cust_prods_upload
 ```
 
 ### Customer numbers
@@ -678,7 +712,7 @@ cust_prods_upload <-
 Recommendations for customer numbers provided.
 
 ```{r}
-ke_recommendations_detailed %>% 
+zw_recommendations_detailed %>% 
   filter(ACCOUNT_NO %in% acc_nums_upload) %>% 
   arrange(desc(max_rating),
           desc(rating), 
@@ -689,15 +723,12 @@ ke_recommendations_detailed %>%
 Replicate the above results in SQL
 
 ```{r}
-tbl(src = con, "ke_recommendations_detailed") %>%
-  filter(ACCOUNT_NO %in% acc_nums_upload) %>%
+tbl(src = con_zw, "recommendations_detailed") %>%
   group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
-  arrange(desc(rating)) %>% 
+  filter(ACCOUNT_NO %in% acc_nums_upload) %>% 
   collect() %>% 
-  slice(1:3) %>% 
-  arrange(desc(max_rating))
+  slice(1:3)
 ```
-
 
 ### Customer products
 
@@ -718,8 +749,8 @@ predict_on_choices(user_choices = cust_prods_upload, recomm_limit = 3)
 
 ```{r}
 # Project image
-save.image(file = "./06May_Models.RData")
-load(file = "./06May_Models.RData")
+save.image(file = "../outputs/16May_Models.RData")
+load(file = "../outputs/16May_Models.RData")
 
 # Ojects for deployment
 saveRDS(object = zw_rec_model, 

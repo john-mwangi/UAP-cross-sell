@@ -21,9 +21,9 @@ library(tidyverse)
 # PRODUCT BUSINESS LINES
 
 ```{r}
-product_businesslines_raw <- readRDS("../outputs/product_businesslines.rds")
+product_businesslines <- readRDS("../outputs/product_businesslines.rds")
 
-product_businesslines_raw
+product_businesslines
 ```
 
 
@@ -148,38 +148,11 @@ product_values_raw
 
 # MISSING
 
-Check that all products have assigned product values.
-
-## Fix Lending products
-
-```{r}
-lending_full_names <-
-read_excel(
-  path = "../../../../../../C - Documentation/Data/festus_extraction/ZW/supp_product_details.xlsx",
-  sheet = "Lending") %>% 
-  janitor::clean_names()
-
-lending_full_names
-```
-
-
-```{r}
-product_businesslines <-
-product_businesslines_raw %>% 
-  left_join(lending_full_names, 
-            by = c("PRODUCT"="abbreviation")) %>% 
-  mutate(full_name = coalesce(full_name,PRODUCT)) %>% 
-  select(PRODUCT = full_name,BUSINESS_LINE)
-
-product_businesslines
-```
-
-
-## Imputation
+Check that all products have assigned product values and impute.
 
 ```{r}
 product_businesslines %>% 
-  left_join(product_values) %>% 
+  left_join(product_values_raw) %>% 
   filter(is.na(product_value))
 ```
 
@@ -187,21 +160,26 @@ product_businesslines %>%
 ```{r}
 product_values <-
 product_businesslines %>% 
-  left_join(product_values, by = "PRODUCT") %>% 
+  left_join(product_values_raw, by = "PRODUCT") %>% 
   group_by(BUSINESS_LINE) %>%
   mutate(product_value = replace_na(product_value, 
                                     mean(product_value, na.rm = TRUE))) %>% 
-  ungroup()
+  ungroup() %>%
+  mutate(product_value = if_else(condition = is.nan(product_value), 
+                                 true = 99999, 
+                                 false = product_value)) %>% 
+  mutate(product_value = round(product_value)) %>% 
+  select(-BUSINESS_LINE)
 
-product_values
+product_values 
 ```
 
 # EXPORT
 
 ```{r}
-save.image("../13May_Product_Values.RData")
+save.image("../outputs/16May_Product_Values.RData")
+#load("../outputs/16May_Product_Values.RData")
 
-saveRDS(product_businesslines, "../outputs/product_businesslines_final.rds")
 saveRDS(product_values,"../outputs/product_values.rds")
 ```
 

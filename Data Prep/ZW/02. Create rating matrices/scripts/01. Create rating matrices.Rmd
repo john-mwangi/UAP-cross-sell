@@ -7,6 +7,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+# Packages
 
 ```{r message=FALSE, warning=FALSE}
 rm(list = ls())
@@ -33,7 +34,6 @@ lending_product_holding <- readRDS("../../01. Determine product holding/outputs/
   rename(ACCOUNT_NO = account_no,
          PRODUCT = product)
 ```
-
 
 # Merge the tables
 
@@ -163,7 +163,7 @@ It should be indicated on the app that:
 saveRDS(object = products_rating_matrix, 
         file = "../outputs/products_rating_matrix.rds")
 
-save.image("./13May_RatingMatrix.RData")
+save.image("../outputs/16May_RatingMatrix.RData")
 load("./05May_RatingMatrix.RData")
 ```
 

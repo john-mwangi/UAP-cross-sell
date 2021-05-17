@@ -211,12 +211,35 @@ read.csv(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/c
 ## Product holding
 
 ```{r}
-lending_product_holding <-
+lending_product_holding_raw <-
 read.csv(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_lending.csv", 
          na.strings = c(""," ")) %>% 
   distinct(account_no,product) %>% 
   count(account_no,product) %>% 
   filter(!is.na(product))
+
+lending_product_holding_raw
+```
+
+## Fix lending product names
+
+```{r}
+lending_full_names <-
+readxl::read_excel(
+  path = "../../../../../../C - Documentation/Data/festus_extraction/ZW/supp_product_details.xlsx",
+  sheet = "Lending") %>% 
+  janitor::clean_names()
+
+lending_full_names
+```
+
+
+```{r}
+lending_product_holding <-
+lending_product_holding_raw %>% 
+  left_join(lending_full_names, by = c("product"="abbreviation")) %>% 
+  mutate(product = coalesce(full_name,product)) %>% 
+  select(-full_name)
 
 lending_product_holding
 ```
@@ -227,7 +250,7 @@ lending_product_holding
 
 ```{r}
 #dir.create("../outputs/objects", recursive = TRUE)
-save.image(file = "../outputs/images/13May.RData")
+save.image(file = "../outputs/images/16May.RData")
 load(file = "../outputs/images/13May.RData")
 
 saveRDS(object = asset_product_holding, 
