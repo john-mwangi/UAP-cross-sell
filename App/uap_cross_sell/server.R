@@ -172,9 +172,12 @@ shinyServer(function(input, output, session) {
     
     #Predict using model
     user_choice_recommendations <-
-      predict(object = readRDS(paste0("./objects/models/",input$country,".rds")), 
-              newdata = user_choices_ratmat, 
-              type="ratings")
+      tryCatch(expr = predict(object = readRDS(paste0("./objects/models/",input$country,".rds")), 
+                      newdata = user_choices_ratmat, 
+                      type="ratings"),
+               error = function(e){
+                 stop("Ensure the products in the upload template match the selected country.")
+               })
     
     #Convert prediction to dataframe
     user_choice_recommendations_df <-
