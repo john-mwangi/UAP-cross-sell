@@ -38,6 +38,11 @@ zw_ownership <- readRDS(file = "../outputs/zw_recommendations_detailed.rds") %>%
   distinct(ownership) %>% 
   pull(ownership)
 
+ug_ownership <- readRDS(file = "../outputs/ug_recommendations_detailed.rds") %>% 
+  ungroup() %>% 
+  distinct(ownership) %>% 
+  pull(ownership)
+
 ke_ownership
 zw_ownership
 ```
@@ -49,6 +54,9 @@ ke_products <- readRDS(file = "../../../Data Prep/KE/02. Create rating matrices/
   colnames()
 
 zw_products <- readRDS(file = "../../../Data Prep/ZW/02. Create rating matrices/outputs/products_rating_matrix.rds") %>% 
+  colnames()
+
+ug_products <- readRDS(file = "../../../Data Prep/UG/02. Create rating matrices/outputs/products_rating_matrix.rds") %>% 
   colnames()
 
 length(ke_products)
@@ -71,6 +79,14 @@ rbind(
     country = "Kenya",
     products = ke_products,
     ownership = c(ke_ownership,
+                  rep(NA, times = length(ke_products) - length(ke_ownership))
+                  )
+    ),
+  
+  tibble(
+    country = "Uganda",
+    products = ug_products,
+    ownership = c(ug_ownership,
                   rep(NA, times = length(ke_products) - length(ke_ownership))
                   )
     )
@@ -142,7 +158,8 @@ for(model in seq_along(model_names)){
 
 ```{r}
 model_con_list <- list(Kenya = c("ke_rec_model","con_ke"),
-                       Zimbabwe = c("zw_rec_model","con_zw"))
+                       Zimbabwe = c("zw_rec_model","con_zw"),
+                       Uganda = c("ug_rec_model","con_ug"))
 ```
 
 
@@ -156,6 +173,7 @@ model_con_list$Kenya[[1]]
 ```{r}
 con_ke <- dbConnect(drv = SQLite(), "../../../App/uap_cross_sell/db/ke_cs.db") 
 con_zw <- dbConnect(drv = SQLite(), "../../../App/uap_cross_sell/db/zw_cs.db") 
+con_ug <- dbConnect(drv = SQLite(), "../../../App/uap_cross_sell/db/ug_cs.db") 
 ```
 
 Pass it a variable "country" that changes the tbl being returned.

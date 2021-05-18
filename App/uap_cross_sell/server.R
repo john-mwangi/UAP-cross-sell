@@ -99,16 +99,19 @@ shinyServer(function(input, output, session) {
   ### Create db connection =====================
   ke_sqlite_path <- "./db/ke_cs.db"
   zw_sqlite_path <- "./db/zw_cs.db"
+  ug_sqlite_path <- "./db/ug_cs.db"
   supp_sqlite_path <- "./db/support.db"
   
   con_ke <- dbConnect(drv = SQLite(), ke_sqlite_path)
   con_zw <- dbConnect(drv = SQLite(), zw_sqlite_path)
+  con_ug <- dbConnect(drv = SQLite(), ug_sqlite_path)
   con_supp <- dbConnect(drv = SQLite(), supp_sqlite_path)
   
   db_con = reactive({
     switch(EXPR = input$country,
            "Kenya" = con <- con_ke,
            "Zimbabwe" = con <- con_zw,
+           "Uganda" = con <- con_ug,
            stop("Invalid country name")
            )
     
