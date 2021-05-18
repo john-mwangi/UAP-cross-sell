@@ -273,14 +273,16 @@ shinyServer(function(input, output, session) {
     ext <- tools::file_ext(input$data_upload$datapath)
     validate(need(ext == "xlsx", "Please use the provided Excel (.xlsx) template"))
     
-    acc_nums_upload <- readxl::read_excel(path = input$data_upload$datapath,
-                                          sheet = "customer_acc") %>% 
+    acc_nums_upload <- 
+      readxl::read_excel(path = input$data_upload$datapath,
+                         sheet = "customer_acc") %>% 
       distinct(ACCOUNT_NO) %>% 
       mutate(ACCOUNT_NO = as.character(ACCOUNT_NO)) %>% 
       pull(ACCOUNT_NO)
     
-    cust_prods_upload <- readxl::read_excel(path = input$data_upload$datapath, 
-                                            sheet = "customer_prod") %>% 
+    cust_prods_upload <- 
+      readxl::read_excel(path = input$data_upload$datapath,
+                         sheet = "customer_prod") %>% 
       distinct(PRODUCT) %>% 
       pull(PRODUCT)
     
