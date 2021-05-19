@@ -163,7 +163,7 @@ It should be indicated on the app that:
 saveRDS(object = products_rating_matrix, 
         file = "../outputs/products_rating_matrix.rds")
 
-save.image("../outputs/16May_RatingMatrix.RData")
-load("./05May_RatingMatrix.RData")
+save.image("../outputs/19May_RatingMatrix.RData")
+#load("./05May_RatingMatrix.RData")
 ```
 

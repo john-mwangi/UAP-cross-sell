@@ -246,6 +246,8 @@ account_info %>%
   select(-AGENT_CODE,-product_count,-products) %>% 
   ungroup()
 }, title = "Customer details")
+
+gc()
 ```
 
 
@@ -266,8 +268,7 @@ saveRDS(product_businesslines,"../outputs/product_businesslines.rds")
 
 
 # Project image
-save.image("./13May_Customer_details.RData")
-load("./05May_Customer_details.RData")
+save.image("../outputs/19May_Customer_details.RData")
 ```
 
 
