@@ -172,12 +172,14 @@ read.csv(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/c
 gi_products_raw
 ```
 
-Load product names shared separately by [Farai](https://docs.google.com/spreadsheets/d/1nH-31Fha4YoUTLZ_krU2wBzqDjA9dOUwXM54OlEQU1E/edit#gid=866527667)
+Load product names and products currently not discontinued shared separately by Farai on this One Drive.
 
 ```{r}
 gi_prod_names <-
-read_excel(path = "../../../../../../C - Documentation/Data/festus_extraction/ZW/supp_product_details.xlsx", sheet = "GI")
-
+read_excel(
+  path = "../../../../../../C - Documentation/Data/festus_extraction/ZW/supp_product_details.xlsx", sheet = "GI") %>% 
+  filter(STATUS == "Keep")
+  
 gi_prod_names
 ```
 
@@ -186,7 +188,7 @@ gi_prod_names
 ```{r}
 gi_product_holding <-
 gi_products_raw %>% 
-  left_join(gi_prod_names, by = c("POLICY_TYPE_CODE"="STATUS")) %>% 
+  left_join(gi_prod_names, by = c("POLICY_TYPE_CODE"="PROD-TYPE")) %>% 
   count(CUSTOMER_NO,DESCRIPTION)
 
 gi_product_holding
@@ -250,8 +252,8 @@ lending_product_holding
 
 ```{r}
 #dir.create("../outputs/objects", recursive = TRUE)
-save.image(file = "../outputs/images/16May.RData")
-load(file = "../outputs/images/13May.RData")
+save.image(file = "../outputs/images/19May.RData")
+#load(file = "../outputs/images/13May.RData")
 
 saveRDS(object = asset_product_holding, 
         file = "../outputs/objects/asset_product_holding.rds")
