@@ -28,38 +28,39 @@ library(tidyverse)
 ## Ownership information
 
 ```{r}
-ke_ownership <- readRDS(file = "../../../Data Prep/KE/03. Extract additional customer details/outputs/ke_recommendations_detailed.rds") %>% 
-  ungroup() %>% 
-  distinct(ownership) %>% 
+ke_ownership <- readRDS(file = "../../../Data Prep/KE/03. Extract additional customer details/outputs/ke_recommendations_detailed.rds") %>%
+  ungroup() %>%
+  distinct(ownership) %>%
   pull(ownership)
 
-zw_ownership <- readRDS(file = "../outputs/zw_recommendations_detailed.rds") %>% 
-  ungroup() %>% 
-  distinct(ownership) %>% 
+zw_ownership <- readRDS(file = "../outputs/zw_recommendations_detailed.rds") %>%
+  ungroup() %>%
+  distinct(ownership) %>%
   pull(ownership)
 
-ug_ownership <- readRDS(file = "../outputs/ug_recommendations_detailed.rds") %>% 
+ug_ownership <- readRDS(file = "../../UG/outputs/ug_recommendations_detailed.rds") %>% 
   ungroup() %>% 
   distinct(ownership) %>% 
   pull(ownership)
 
 ke_ownership
 zw_ownership
+ug_ownership
 ```
 
 ## Product information
 
 ```{r}
-ke_products <- readRDS(file = "../../../Data Prep/KE/02. Create rating matrices/outputs/products_rating_matrix.rds") %>% 
+ke_products <- readRDS(file = "../../../Data Prep/KE/02. Create rating matrices/outputs/products_rating_matrix.rds") %>%
   colnames()
 
-zw_products <- readRDS(file = "../../../Data Prep/ZW/02. Create rating matrices/outputs/products_rating_matrix.rds") %>% 
+zw_products <- readRDS(file = "../../../Data Prep/ZW/02. Create rating matrices/outputs/products_rating_matrix.rds") %>%
   colnames()
 
-ug_products <- readRDS(file = "../../../Data Prep/UG/02. Create rating matrices/outputs/products_rating_matrix.rds") %>% 
+ug_products <- readRDS(file = "../../../Data Prep/UG/product_holding/products_rating_matrix.rds") %>% 
   colnames()
 
-length(ke_products)
+length(ug_products)
 length(zw_products)
 ```
 
@@ -87,12 +88,22 @@ rbind(
     country = "Uganda",
     products = ug_products,
     ownership = c(ug_ownership,
-                  rep(NA, times = length(ke_products) - length(ke_ownership))
+                  rep(NA, times = length(ug_products) - length(ug_ownership))
                   )
     )
   )
 
 support_df
+```
+
+```{r}
+ug_tibble <- tibble(
+    country = "Uganda",
+    products = ug_products,
+    ownership = c(ug_ownership,
+                  rep(NA, times = length(ug_products) - length(ug_ownership))
+                  )
+    )
 ```
 
 
@@ -115,6 +126,13 @@ copy_to(dest = con_supp,
         overwrite = TRUE, 
         temporary = FALSE)
 ```
+
+
+## Updating support db with UG tibble
+```{r}
+dbWriteTable(con = con_supp, "support", ug_tibble, append=TRUE, row.names = FALSE)
+```
+
 
 
 ```{r}

@@ -62,7 +62,7 @@ On average, people purchase just one product.
 
 ```{r}
 products_df_raw %>% 
-  count(ACCOUNT_NO) %>% 
+  count(PRODUCT) %>% 
   summary()
 ```
 
@@ -126,8 +126,8 @@ rownames(products_matrix) <- products_df %>% pull(ACCOUNT_NO)
 # Check matrix
 
 ```{r}
-rownames(products_matrix)[1:10]
-colnames(products_matrix)[1:10]
+# rownames(products_matrix)[1:28]
+colnames(products_matrix)[1:28]
 ```
 
 # Convert to binaryRatingMatrix
@@ -147,7 +147,7 @@ class(products_rating_matrix)
 saveRDS(object = products_rating_matrix,
         file = "../../product_holding/products_rating_matrix.rds")
 
-save.image("./10May_RatingMatrix.RData")
-load("./10May_RatingMatrix.RData")
+save.image("./27May_RatingMatrix.RData")
+load("./27May_RatingMatrix.RData")
 ```
 

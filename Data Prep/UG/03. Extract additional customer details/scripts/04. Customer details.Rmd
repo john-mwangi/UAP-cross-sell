@@ -49,7 +49,37 @@ c("ACCOUNT_NO",
 Product business lines
 
 ```{r}
-product_businesslines <- readRDS(file = "../../../../Models/UG/scripts/product_businesslines.rds")
+# product_businesslines <- readRDS(file = "../../../../Models/UG/scripts/product_businesslines.rds")
+# 
+# product_businesslines
+```
+
+# PRODUCT BUSINESS LINES
+
+## Product names
+
+```{r}
+# Health products
+health_products <-
+readRDS("../../product_holding/health_product_holding_final.rds") %>% 
+  distinct(Product) %>% 
+  pull(Product)
+
+gi_products <-
+readRDS(file = "../../product_holding/gi_product_holding_final.rds") %>% 
+  distinct(POLICY_TYPE) %>% 
+  pull(POLICY_TYPE)
+
+
+product_businesslines <-
+bind_rows(
+    tibble(PRODUCT = health_products,
+           BUSINESS_LINE = "Health"),
+    tibble(PRODUCT = gi_products,
+           BUSINESS_LINE = "General")
+)
+
+saveRDS(product_businesslines, "../../../../Models/UG/scripts/product_businesslines.rds")
 
 product_businesslines
 ```
@@ -110,11 +140,6 @@ tail(health_customers)
 ```
 
 Health insurance products.
-
-```{r}
-length(intersect(x = policyheader$MEMBER_NO, 
-                 y = health_customers$PRI_ACCOUNT_NO))
-```
 
 ```{r}
 health_acc_products <- vroom::vroom("../../../../../../Uganda/Health/policyheader_nonlife_uganda.csv") %>% 
@@ -429,8 +454,6 @@ head(health_statement_accounts_refs)
 Check how many of the two records can be merged
 
 ```{r}
-#TODO: Consult Keldine on improving the matching of the two files
-
 length(unique(health_statement_refs$policy))
 
 length(intersect(x = health_statement_refs$policy,
@@ -591,6 +614,7 @@ bind_rows(health_product_values_final,
 
 product_values
 ```
+
 ```{r}
 saveRDS(object = product_values, file = "../../product_holding/product_values.rds")
 ```
@@ -699,7 +723,7 @@ customer_details_complete %>%
   distinct(ACCOUNT_NO, .keep_all = TRUE)
 
 dim(customer_details_final)
-head(customer_details_final)
+tail(customer_details_final)
 ```
 ## Test
 
@@ -760,6 +784,9 @@ unique(ug_recommendations_detailed$ownership)
 
  saveRDS(object = product_values,
          file = "../outputs/product_values.rds")
+ 
+ saveRDS(object = customer_details_final,
+         file = "../outputs/customer_details_final.rds")
 
 getwd()
 # Recommendations as a csv
@@ -767,8 +794,8 @@ write_csv(x = ug_recommendations_detailed %>% select(-customer_details),
           file = "./recommendations_df.csv")
 
 # Project image
-save.image("./10May_Customer_details.RData")
-load("./10May_Customer_details.RData")
+save.image("./27May_Customer_details.RData")
+load("./27May_Customer_details.RData")
 ```
 
 

@@ -38,10 +38,13 @@ The table below returns a table showing products held by each account (1 product
 health_prod_holding <-
 health_products_raw %>% 
   distinct(ACCOUNT_NO, `BENEFIT DESCRIPTION`) %>% 
+  filter (!`BENEFIT DESCRIPTION` == "NULL") %>%
   count(ACCOUNT_NO,`BENEFIT DESCRIPTION`) %>% 
   arrange(desc(n))
 
-dim(health_prod_holding)
+health_prod_holding %>%
+  distinct(`BENEFIT DESCRIPTION`)
+
 ```
 
 
@@ -54,7 +57,10 @@ One customer account number can hold more than one product.
 
 ```{r}
 health_prod_holding %>% 
-  filter(ACCOUNT_NO=="827120")
+  count(n, sort=TRUE)
+# %>% 
+  # filter(ACCOUNT_NO=="827120")
+
 ```
 
 
@@ -63,19 +69,24 @@ health_prod_holding %>%
 Because one customer account number can contain more than one product, we join on the basis of `ACCOUNT_NO` and `Product`.
 
 ```{r}
-health_product_holding_final <- health_prod_holding %>% 
-# Exclude rows that were not amended
-# Expect to see Corporate products and Retail products starting with Afya
-  anti_join(health_products_raw %>%
-            select(ACCOUNT_NO, `BENEFIT DESCRIPTION`, COVER_TYPE) %>% 
-            filter(COVER_TYPE=="RETAIL"),  
-            by = c("ACCOUNT_NO", "BENEFIT DESCRIPTION")) %>%
+health_product_holding_final <- health_prod_holding %>%
+# %>% 
+# # Exclude rows that were not amended
+# # Expect to see Corporate products and Retail products starting with Afya
+#   anti_join(health_products_raw %>%
+#             select(ACCOUNT_NO, `BENEFIT DESCRIPTION`, COVER_TYPE) %>% 
+#             filter(COVER_TYPE=="RETAIL"),  
+#             by = c("ACCOUNT_NO", "BENEFIT DESCRIPTION")) %>%
             rename("Product" = "BENEFIT DESCRIPTION")
 # Include amended rows
   # bind_rows(health_products_amended)
 
 dim(health_product_holding_final)
 dim(health_prod_holding)
+```
+
+```{r}
+unique(health_product_holding_final$Product)
 ```
 
 Check if successful.
@@ -102,9 +113,11 @@ health_product_holding_final %>%
 ```{r}
 health_product_holding_final <- health_product_holding_final %>% 
   mutate(n = replace_na(1))
+
 ```
 
 ```{r}
+unique(health_product_holding_final$Product)
 health_product_holding_final
 ```
 
@@ -159,10 +172,23 @@ gi_products_raw %>%
 ```
 
 ```{r}
+gi_products_raw %>% count(POLICY_TYPE) 
+```
+
+```{r}
+gi_products_raw %>% 
+  mutate(POLICY_TYPE = str_trim(POLICY_TYPE),
+         ACCOUNT_NO = str_trim(ACCOUNT_NO)) %>%
+  pull(ACCOUNT_NO)
+```
+
+
+
+```{r}
 insufficient_gi_purchases <-
 gi_products_raw %>% 
   count(POLICY_TYPE) %>% 
-  filter(n<10) %>% 
+  filter(n<20) %>% 
   pull(POLICY_TYPE)
 
 insufficient_gi_purchases
@@ -184,7 +210,6 @@ gi_products_raw %>%
   mutate(POLICY_TYPE = str_trim(POLICY_TYPE),
          ACCOUNT_NO = str_trim(ACCOUNT_NO)) %>% 
   filter(!is.na(ACCOUNT_NO)) %>%
-  filter(!str_length(ACCOUNT_NO) < 4) %>% 
   filter(!POLICY_TYPE %in% insufficient_gi_purchases) %>% 
   filter(!str_detect(string = POLICY_TYPE, pattern = "HEALTH")) %>% 
   filter(!str_detect(string = POLICY_TYPE, pattern = "MEDICAL")) %>%
@@ -196,7 +221,8 @@ gi_products_raw %>%
   count(ACCOUNT_NO, POLICY_TYPE)
 
 dim(gi_product_holding)
-head(gi_product_holding)
+gi_product_holding %>%
+  distinct(POLICY_TYPE)
 ```
 
 Number of products
@@ -235,17 +261,10 @@ Some Account Numbers in Health and GI match?
 First, change the format of account number in GI dataset to match that of Health. 
 
 ```{r}
-gi_product_holding_accts_chopped <- gi_product_holding_final %>%
-  mutate(ACCOUNT_NO = str_sub(ACCOUNT_NO, 6, -1)) 
-
-gi_product_holding_accts_chopped$ACCOUNT_NO = as.integer(gi_product_holding_accts_chopped$ACCOUNT_NO)
-```
-
-```{r}
-length(
-    intersect(
-      unique(health_product_holding_final$ACCOUNT_NO),
-      unique(gi_product_holding_accts_chopped$ACCOUNT_NO)))
+# gi_product_holding_accts_chopped <- gi_product_holding_final %>%
+#   mutate(ACCOUNT_NO = str_sub(ACCOUNT_NO, 6, -1)) 
+# 
+# gi_product_holding_accts_chopped$ACCOUNT_NO = as.integer(gi_product_holding_accts_chopped$ACCOUNT_NO)
 ```
 
 ## Conclusion
@@ -261,12 +280,6 @@ Account Number (in products) can be a common unique customer identifier between 
 # EXPORT
 
 ```{r}
-save.image(file = "./10May-Customer_Matching.RData")
-load("10May-Customer_Matching.RData")
-```
-
-
-```{r}
 #Create product_holding directory
 # dir.create("../../product_holding/")
 # Health product holdings
@@ -278,16 +291,16 @@ saveRDS(object = gi_product_holding_final,
         file = "../../product_holding/gi_product_holding_final.rds")
 
 # General insurance product holding
-saveRDS(object = gi_product_holding_accts_chopped, 
-        file = "../../product_holding/gi_product_holding_acct_no_formatted.rds")
+# saveRDS(object = gi_product_holding_accts_chopped, 
+#         file = "../../product_holding/gi_product_holding_acct_no_formatted.rds")
 
 # GI Accounts
 saveRDS(object = gi_products_raw,
         file = "../../product_holding/gi_products_raw.rds")
 
 # Project image
-save.image(file = "./10May_Product_Cust_Matching.RData")
-load("10May_Product_Cust_Matching.RData")
+save.image(file = "./27May_Product_Cust_Matching.RData")
+load("27May_Product_Cust_Matching.RData")
 ```
 
 

@@ -385,16 +385,17 @@ hybrid_model_weights
 
 
 ```{r}
-ug_rec_model = Recommender(data = products_rating_matrix, method = "IBCF")
+ug_ibcf = Recommender(data = products_rating_matrix, method = "IBCF")
 ug_pop = Recommender(data = products_rating_matrix, method = "POPULAR")
-
-# ke_hyb = HybridRecommender(ke_pop, ke_ibcf, 
-#                            weights = hybrid_model_weights)
+ug_hybrid = HybridRecommender(ug_ibcf, ug_pop, weights=c(0.9, 0.1))
+ug_rec_model = ug_hybrid
 ```
 
 # USER RATINGS
 
 ## Extract ratings
+
+### Former Approach
 
 User ratings represent how likely a user is to purchase a product.
 
@@ -409,92 +410,232 @@ gc()
 
 doParallel::stopImplicitCluster()
 ```
-## Convert to dataframe
 
-Convert rating to a dataframe.
+### Approach 3
+
+We try matrices.
 
 ```{r}
-ug_recommendations_df <- as(ug_recommendations, "data.frame")
+ibcf_ug_recommendations <-
+predict(object = ug_ibcf, 
+        newdata = products_rating_matrix,
+        type = "ratings")
 
-ug_recommendations_df <- ug_recommendations_df %>%
-  rename(ACCOUNT_NO = user,
-         PRODUCT = item)
-
-ug_recommendations_df %>% 
-  arrange(rating)
+pop_ug_recommendations <-
+predict(object = ug_pop, 
+        newdata = products_rating_matrix,
+        type = "ratings")
 ```
+
+
+```{r}
+ibcf_ug_recommendations %>% 
+  as("matrix") %>% 
+  dim()
+
+pop_ug_recommendations %>% 
+  as("matrix") %>% 
+  dim()
+```
+Check if column names and row names match
+
+```{r}
+identical(x = colnames(ibcf_ug_recommendations), 
+          y = colnames(pop_ug_recommendations))
+
+identical(x = rownames(ibcf_ug_recommendations), 
+          y = rownames(pop_ug_recommendations))
+```
+
+Obtain hybrid ratings...
+
+```{r}
+ibcf_ug_matrix <- as(object = ibcf_ug_recommendations, Class = "matrix") * 0.9
+pop_ug_matrix <- as(object = pop_ug_recommendations, Class = "matrix") * 0.1
+
+
+hyb_ug_matrix <- ibcf_ug_matrix + pop_ug_matrix
+```
+
+```{r}
+ug_recommendations_raw <-
+hyb_ug_matrix %>% 
+  as.data.frame() %>% 
+  rownames_to_column("user") %>% 
+  pivot_longer(cols = -user, 
+               values_to = "hyb_rating", 
+               names_to = "item") %>% 
+  bind_cols(pop_ug_matrix %>% 
+              as.data.frame() %>%
+              pivot_longer(cols = everything(),
+                           values_to = "pop_rating")) %>% 
+  mutate(rating = coalesce(hyb_rating, pop_rating)) %>% 
+  select(-contains("_rating"), -name)
+
+ug_recommendations_raw
+```
+
+### Zim Approach
+
+```{r}
+ug_ibcf_mat <- 
+  predict(object = ug_ibcf,
+          newdata = products_rating_matrix,
+          type = "ratings") %>% 
+  as("matrix")
+
+ug_pop_mat <- 
+  predict(object = ug_pop,
+          newdata = products_rating_matrix,
+          type = "ratings") %>% 
+  as("matrix")
+```
+
+Replace NAs with zero and obtain hybrid matrix.
+
+```{r}
+ug_pop_mat[is.na(ug_pop_mat)]=0
+ug_ibcf_mat[is.na(ug_ibcf_mat)]=0
+
+
+ug_hyb_mat = (ug_ibcf_mat*0.9) + (ug_pop_mat*0.1)
+```
+
+Comparison of results...
+
+```{r}
+predict(object = ug_hybrid, 
+        newdata = products_rating_matrix[1:2,], 
+        type = "ratings") %>% 
+  as("data.frame") %>% 
+  filter(item %in% colnames(products_rating_matrix)[1:5])
+```
+
+```{r}
+ug_recommendations <-
+ug_hyb_mat %>% 
+  as.data.frame() %>% 
+  rownames_to_column("ACCOUNT_NO") %>%
+  pivot_longer(cols = -ACCOUNT_NO,
+               names_to = "PRODUCT",
+               values_to = "rating") %>% 
+  filter(rating != 0) %>% 
+  filter(!ACCOUNT_NO=="NA.") %>%
+  mutate(ACCOUNT_NO = str_remove(ACCOUNT_NO, "^X")) %>%
+  filter(rating != 0)
+
+ug_recommendations
+```
+
+
+
+```{r}
+# ug_recommendations <-
+# ug_hyb_mat %>% 
+#   as.data.frame() %>% 
+#   rownames_to_column("ACCOUNT_NO") %>%
+#   pivot_longer(cols = -ACCOUNT_NO,
+#               names_to = "PRODUCT",
+#               values_to = "rating") %>%
+#   filter(rating != 0) %>% 
+#   filter(!ACCOUNT_NO=="NA.") %>%
+#   mutate(ACCOUNT_NO = str_remove(ACCOUNT_NO, "^X")) %>%
+#   # distinct(PRODUCT) %>%
+#   filter (PRODUCT == "NULL")
+
+# ug_recommendations
+```
+
 
 # PRODUCT BUSINESS LINES
 
 ## Product names
 
 ```{r}
-# Health products
-health_products <-
-readRDS("../../../Data Prep/UG/product_holding/health_product_holding_final.rds") %>% 
-  distinct(Product) %>% 
-  pull(Product)
-
-gi_products <-
-readRDS(file = "../../../Data Prep/UG/product_holding/gi_product_holding_final.rds") %>% 
-  distinct(POLICY_TYPE) %>% 
-  pull(POLICY_TYPE)
-```
-
-## Create dataframe
-
-```{r}
-product_businesslines <-
-bind_rows(
-    tibble(PRODUCT = health_products,
-           BUSINESS_LINE = "Health"),
-    tibble(PRODUCT = gi_products,
-           BUSINESS_LINE = "General")
-)
+product_businesslines <- readRDS(file = "./product_businesslines.rds")
 
 product_businesslines
 ```
 
-## Join to recommendations list
+```{r}
+ug_recommendations_proc <-
+ug_recommendations %>%
+  left_join(product_businesslines, by = "PRODUCT")
 
+ug_recommendations_proc
+```
 ```{r}
 ug_recommendations_df <-
-ug_recommendations_df %>%
-  left_join(product_businesslines, by = "PRODUCT") %>% 
-  relocate(BUSINESS_LINE, .after = PRODUCT)
+ug_recommendations_proc %>% 
+  group_by(ACCOUNT_NO) %>% 
+  mutate(max_rating = max(rating)) %>% 
+  arrange(desc(max_rating),
+          desc(rating), .by_group = TRUE) %>% 
+  ungroup() %>%
+  group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
+  slice(1:5)
 
 ug_recommendations_df
 ```
+
+
+## Save Ug Recommendations DF
 
 ```{r}
 saveRDS(object = ug_recommendations_df,
         file = "./ug_recommendations_df.rds")
 ```
 
-## Add Grouping & Max Rating [FINAL]
-
-Add max rating at customer level only.
-Group results by customer and business line
+## Add product values
 
 ```{r}
-ug_recommendations_df <-
+product_values <-
+readRDS(file = "../../../Data Prep/UG/03. Extract additional customer details/outputs/product_values.rds")
+
+product_values
+```
+
+```{r}
+ug_recommendations_df_proc <-
 ug_recommendations_df %>% 
-  group_by(ACCOUNT_NO) %>% 
-  mutate(max_rating = max(rating)) %>% 
-  ungroup() %>% 
-  group_by(ACCOUNT_NO, BUSINESS_LINE)
+  left_join(product_values, by = c("PRODUCT"="PRODUCT")) %>% 
+  select(-accounts)
 
-ug_recommendations_df
+ug_recommendations_df_proc
 ```
 
-## Save as data.table
 
-This format removes the groups.
+## Add customer details & grouping
+
+Merge ratings with customer details.
 
 ```{r}
-#recommendations_df <- data.table(recommendations_df)
+customer_details_final <-
+readRDS(file = "../../../Data Prep/UG/03. Extract additional customer details/outputs/customer_details_final.rds") %>% 
+  ungroup()
+
+customer_details_final
 ```
 
+
+```{r}
+
+ug_recommendations_detailed <-
+ug_recommendations_df_proc %>% 
+  left_join(customer_details_final, by = "ACCOUNT_NO") %>% 
+  relocate(BUSINESS_LINE, .after = PRODUCT) %>% 
+  group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
+  select(c(ACCOUNT_NO, PRODUCT, BUSINESS_LINE, rating, max_rating, ownership, intermediated, product_value, customer_details))
+
+ug_recommendations_detailed
+```
+
+## Save Ug Recommendations DF
+
+```{r}
+saveRDS(object = ug_recommendations_detailed,
+        file = "./ug_recommendations_detailed.rds")
+```
 
 # CREATE DATABASE
 
@@ -516,7 +657,22 @@ dbListTables(conn = con)
 ```{r}
 product_values <- readRDS("../../../Data Prep/UG/product_holding/product_values.rds")
 
-copy_to(dest = con, df = product_values, overwrite = TRUE, temporary = FALSE)
+# copy_to(dest = con, df = product_values, overwrite = TRUE, temporary = FALSE)
+```
+
+
+```{r}
+copy_to(dest = con, 
+        df = product_businesslines, 
+        name = "product_businesslines", 
+        overwrite = TRUE, 
+        temporary = FALSE)
+
+copy_to(dest = con, 
+        df = product_values, 
+        name = "product_values", 
+        overwrite = TRUE,
+        temporary = FALSE)
 ```
 
 
@@ -543,13 +699,19 @@ dbListTables(conn = con)
 Create database tables of required data.
 
 ```{r}
-ug_recommendations_detailed <- readRDS(file = "../../../Data Prep/UG/03. Extract additional customer details/outputs/ug_recommendations_detailed.rds")
+ug_recommendations_detailed <- readRDS(file = "./ug_recommendations_detailed.rds")
 ```
 
 
 ```{r}
 copy_to(dest = con, 
         df = ug_recommendations_detailed, 
+        overwrite = TRUE, 
+        temporary = FALSE)
+
+copy_to(dest = con, 
+        df = ug_recommendations_detailed, 
+        name = "recommendations_detailed",
         overwrite = TRUE, 
         temporary = FALSE)
 ```
@@ -576,6 +738,14 @@ records <- strsplit(x = sample_cust_num, split = ",")[[1]]
 
 records
 ```
+
+```{r}
+predict_ratings <- predict(ug_rec_model, newdata=products_rating_matrix[records], type="ratings") 
+as(predict_ratings, "data.frame")
+
+
+```
+
 
 ```{r}
 ug_recommendations_detailed %>% 
@@ -766,7 +936,7 @@ head(user_choices)
 
 
 ```{r}
-predict_on_choices(user_choices)
+print (predict_on_choices(user_choices))
 ```
 
 ## Scenario 4
@@ -820,14 +990,14 @@ tibble(PRODUCTS = colnames(products_rating_matrix)) %>%
 
 ```{r}
 acc_nums_upload <- 
-  readxl::read_excel(path = "./cs_upload_template.xlsx",
+  readxl::read_excel(path = "../../../App/uap_cross_sell/www/files/cs_upload_template.xlsx",
                      sheet = "customer_acc") %>% 
   distinct(ACCOUNT_NO) %>% 
   mutate(ACCOUNT_NO = as.character(ACCOUNT_NO)) %>% 
   pull(ACCOUNT_NO)
 
 cust_prods_upload <- 
-  readxl::read_excel(path = "./cs_upload_template.xlsx", 
+  readxl::read_excel(path = "../../../App/uap_cross_sell/www/files/cs_upload_template.xlsx", 
                      sheet = "customer_prod") %>% 
   distinct(PRODUCT) %>% 
   pull(PRODUCT)
@@ -939,20 +1109,10 @@ as(user_choice_recommendations, "data.frame") %>%
   slice(1:3)
 ```
 
-
 ```{r}
-system.time(
-tbl(src = con, "ug_recommendations_detailed") %>% 
-  distinct(ownership) %>% 
-  pull(ownership)
-)
+2+2
 ```
 
-```{r}
-system.time(
-  unique(ug_recommendations_detailed$ownership)
-)
-```
 
 
 # LIMITATIONS
@@ -965,7 +1125,7 @@ system.time(
 
 ```{r}
 # # Models
-saveRDS(object = ug_pop, file = "./ke_pop.rds")
+saveRDS(object = ug_pop, file = "./ug_pop.rds")
 
 # User ratings
 saveRDS(object = ug_recommendations_df,
@@ -976,7 +1136,7 @@ saveRDS(object = popular_products,
         file = "./popular_products.rds")
 
 # Product business lines
-saveRDS(product_businesslines, "./product_businesslines.rds")
+# saveRDS(product_businesslines, "./product_businesslines.rds")
 
 # Sample of customers to display
 # saveRDS(object = recommendations_detailed_sample,
@@ -986,23 +1146,27 @@ saveRDS(product_businesslines, "./product_businesslines.rds")
 saveRDS(object = products_rating_matrix,
         file = "../../../App/uap_cross_sell/objects/products_rating_matrix.rds")
 
-saveRDS(object = ug_rec_model,
-        file = "../../../App/uap_cross_sell/objects/ug_rec_model.rds")
-
 saveRDS(object = product_businesslines,
         file = "../../../App/uap_cross_sell/objects/product_businesslines.rds")
 # 
-saveRDS(object = unique(ug_recommendations_detailed$ownership),
-        file = "../../../App/uap_cross_sell/objects/ownership.rds")
-# 
 # Project image
-save.image(file = "./10May_Models.RData")
+save.image(file = "./27May_Models.RData")
 
 # Image containing trained model
-load("./10May_Models.RData")
+load("./27May_Models.RData")
+
+# Ojects for deployment
+saveRDS(object = ug_rec_model, 
+        file = "../../../App/uap_cross_sell/objects/models/Uganda.rds")
+
+saveRDS(object = ug_recommendations_detailed,
+        file = "../outputs/ug_recommendations_detailed.rds")
 
 ```
 
+```{r}
+write_csv(product_businesslines, "product_businesslines.csv")
+```
 
 
 
