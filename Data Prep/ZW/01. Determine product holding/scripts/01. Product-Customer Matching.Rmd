@@ -76,7 +76,12 @@ asset_product_holding
 
 ## Sense check
 
-Check that a product is mapped once per customer (account number).
+Check that a product is mapped once per customer (account number) and no NAs.
+
+```{r}
+asset_product_holding %>% distinct(PRODUCT)
+```
+
 
 ```{r}
 asset_product_holding %>% 
@@ -139,6 +144,15 @@ life_product_holding
 ```
 ## Sense check
 
+Check NAs
+
+```{r}
+life_product_holding %>% distinct(PRODUCT)
+
+life_product_holding %>% filter(str_detect(CUSTOMER_NUMBER,"NA"))
+```
+
+
 Check each product is mapped once per customer.
 
 ```{r}
@@ -172,7 +186,7 @@ read.csv(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/c
 gi_products_raw
 ```
 
-Load product names and products currently not discontinued shared separately by Farai on this One Drive.
+Load product names and products currently not discontinued shared separately by Farai on his One Drive.
 
 ```{r}
 gi_prod_names <-
@@ -189,10 +203,17 @@ gi_prod_names
 gi_product_holding <-
 gi_products_raw %>% 
   left_join(gi_prod_names, by = c("POLICY_TYPE_CODE"="PROD-TYPE")) %>% 
+  filter(!is.na(DESCRIPTION)) %>% 
   count(CUSTOMER_NO,DESCRIPTION)
 
 gi_product_holding
+```
 
+## Sense check
+
+Check for NA values.
+
+```{r}
 gi_product_holding %>% 
   filter(is.na(DESCRIPTION))
 ```
@@ -246,14 +267,103 @@ lending_product_holding_raw %>%
 lending_product_holding
 ```
 
+## Sense check
+
+Check for NA values.
+
+```{r}
+lending_product_holding %>% 
+  distinct(product)
+```
+
+# BANKING
+
+## T24
+
+### Data exploration
+
+T24
+
+`CUSTOMER_NUMBER` is the unique customer identifier.
+
+```{r}
+read.csv(
+  file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_t24_banking.csv",
+  sep = ";") %>%
+  filter(CUSTOMER_NUMBER=="5128655")
+```
+ 
+### Product holding
+
+```{r}
+t24_product_holding <-
+fread(
+  file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_t24_banking.csv",
+  sep = ";") %>% 
+  distinct(CUSTOMER_NUMBER, PRODUCT) %>% 
+  count(CUSTOMER_NUMBER, PRODUCT)
+
+t24_product_holding
+```
+
+## Postilion 
+
+### Data exploration
+
+`CUSTOMER_NUMBER` is the unique customer identifier. Product column requires filtering of invalid product numbers.
+
+```{r}
+fread(
+  file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_postilion_banking.csv", 
+  sep = ";") %>% 
+  filter(str_detect(string = PRODUCT, pattern = "[[:alpha:]]")) %>% 
+  count(CUSTOMER_NUMBER, sort = TRUE)
+```
+
+### Product holding
+
+```{r}
+postilion_product_holding <-
+fread(
+  file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_postilion_banking.csv", 
+  sep = ";", na.strings = c(""," ")) %>% 
+  filter(!is.na(CUSTOMER_NUMBER)) %>% 
+  filter(str_detect(string = PRODUCT, pattern = "[[:alpha:]]")) %>% 
+  distinct(CUSTOMER_NUMBER, PRODUCT) %>% 
+  count(CUSTOMER_NUMBER, PRODUCT)
+
+postilion_product_holding
+```
+
+## Banking product holding
+
+```{r}
+banking_product_holding <- 
+  rbind(t24_product_holding, 
+        postilion_product_holding) %>% 
+  distinct(CUSTOMER_NUMBER, PRODUCT, .keep_all = TRUE)
+
+banking_product_holding
+```
+
+## Sense check
+
+Banking has too many products including irrelevant ones.
+
+```{r}
+banking_product_holding %>% 
+  distinct(PRODUCT) %>% 
+  write_csv("../outputs/banking_products.csv")
+```
+
 
 
 # EXPORT
 
 ```{r}
 #dir.create("../outputs/objects", recursive = TRUE)
-save.image(file = "../outputs/images/19May.RData")
-#load(file = "../outputs/images/13May.RData")
+save.image(file = "../outputs/images/27May.RData")
+#load(file = "../outputs/images/24May.RData")
 
 saveRDS(object = asset_product_holding, 
         file = "../outputs/objects/asset_product_holding.rds")
@@ -263,6 +373,8 @@ saveRDS(object = gi_product_holding,
         file = "../outputs/objects/gi_product_holding.rds")
 saveRDS(object = lending_product_holding,
         file = "../outputs/objects/lending_product_holding.rds")
+saveRDS(object = banking_product_holding,
+        file = "../outputs/objects/banking_product_holding.rds")
 ```
 
 

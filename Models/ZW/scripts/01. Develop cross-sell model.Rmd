@@ -217,6 +217,8 @@ product_businesslines <-
 readRDS(file = "../../../Data Prep/ZW/03. Extract additional customer details/outputs/product_businesslines.rds")
 
 product_businesslines
+
+colnames(products_rating_matrix)
 ```
 
 ```{r}
@@ -282,14 +284,14 @@ customer_details_final
 
 
 ```{r}
-table_order <- c(ACCOUNT_NO, PRODUCT, BUSINESS_LINE, rating, max_rating, ownership, intermediated, product_value, customer_details)
+table_order <- c("ACCOUNT_NO", "PRODUCT", "BUSINESS_LINE", "rating", "max_rating", "ownership", "intermediated", "product_value", "customer_details")
 
 zw_recommendations_detailed <-
 zw_recommendations_df_proc %>% 
   left_join(customer_details_final, by = "ACCOUNT_NO") %>% 
   relocate(BUSINESS_LINE, .after = PRODUCT) %>% 
   group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
-  select(table_order)
+  select(all_of(table_order))
 
 zw_recommendations_detailed
 ```
@@ -337,6 +339,7 @@ copy_to(dest = con_zw,
         temporary = FALSE)
 ```
 
+Compare the two tables...
 
 ```{r}
 dim(zw_recommendations_detailed)
@@ -414,6 +417,7 @@ predict(object = zw_rec_model,
   as("data.frame") %>% 
   left_join(product_businesslines, by = c("item"="PRODUCT")) %>% 
   group_by(user, BUSINESS_LINE) %>% 
+  arrange(desc(rating)) %>% 
   slice(1:3)
 ```
 
@@ -677,7 +681,7 @@ tbl(src = con_zw, "popular_products") %>%
 
 Ref: https://trumpexcel.com/dependent-drop-down-list-in-excel/
 
-Valid product names.
+### Product names
 
 ```{r}
 #dir.create("../outputs")
@@ -749,8 +753,8 @@ predict_on_choices(user_choices = cust_prods_upload, recomm_limit = 3)
 
 ```{r}
 # Project image
-save.image(file = "../outputs/16May_Models.RData")
-load(file = "../outputs/16May_Models.RData")
+save.image(file = "../outputs/27May_Models.RData")
+#load(file = "../outputs/16May_Models.RData")
 
 # Ojects for deployment
 saveRDS(object = zw_rec_model, 
