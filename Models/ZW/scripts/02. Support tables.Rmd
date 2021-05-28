@@ -21,6 +21,7 @@ This table will contain, for each country:
 ```{r}
 rm(list = ls())
 
+library(DBI)
 library(tidyverse)
 ```
 
@@ -50,6 +51,7 @@ ug_ownership
 
 ## Product information
 
+
 ```{r}
 ke_products <- readRDS(file = "../../../Data Prep/KE/02. Create rating matrices/outputs/products_rating_matrix.rds") %>%
   colnames()
@@ -60,8 +62,9 @@ zw_products <- readRDS(file = "../../../Data Prep/ZW/02. Create rating matrices/
 ug_products <- readRDS(file = "../../../Data Prep/UG/product_holding/products_rating_matrix.rds") %>% 
   colnames()
 
-length(ug_products)
+length(ke_products)
 length(zw_products)
+length(ug_products)
 ```
 
 
@@ -82,19 +85,12 @@ rbind(
     ownership = c(ke_ownership,
                   rep(NA, times = length(ke_products) - length(ke_ownership))
                   )
-    ),
-  
-  tibble(
-    country = "Uganda",
-    products = ug_products,
-    ownership = c(ug_ownership,
-                  rep(NA, times = length(ug_products) - length(ug_ownership))
-                  )
     )
   )
 
 support_df
 ```
+
 
 ```{r}
 ug_tibble <- tibble(
@@ -129,6 +125,7 @@ copy_to(dest = con_supp,
 
 
 ## Updating support db with UG tibble
+
 ```{r}
 dbWriteTable(con = con_supp, "support", ug_tibble, append=TRUE, row.names = FALSE)
 ```
@@ -137,6 +134,41 @@ dbWriteTable(con = con_supp, "support", ug_tibble, append=TRUE, row.names = FALS
 
 ```{r}
 dbListTables(conn = con_supp)
+```
+
+# Check db updates
+
+Check if support.db has been updated correctly with UG work.
+
+Kenya & Zimbabwe.
+
+```{r}
+tbl(src = con_supp, "support") %>% 
+  collect() %>% 
+  dim()
+```
+
+Uganda.
+
+```{r}
+supp_sqlite_path_ug <- "../../../App/uap_cross_sell/db/support_tayo.db"
+
+con_supp_ug <- dbConnect(drv = RSQLite::SQLite(), supp_sqlite_path_ug)
+```
+
+
+```{r}
+tbl(src = con_supp_ug, "support") %>% 
+  filter(country %in% c("Zimbabwe","Kenya")) %>%
+  collect() %>% 
+  dim()
+```
+
+```{r}
+tbl(src = con_supp_ug, "support") %>% 
+  filter(country=="Uganda") %>% 
+  collect() %>% 
+  dim()
 ```
 
 
