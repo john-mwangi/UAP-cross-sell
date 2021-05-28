@@ -1,0 +1,64 @@
+---
+title: "Data completeness"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Packages
+
+```{r}
+rm(list = ls())
+
+library(data.table)
+library(tidyverse)
+```
+
+
+Check completeness of information against data requirments.
+
+# LIFE
+
+## Product information
+
+Product information is available.
+
+```{r}
+fread(input = "../../../../../../C - Documentation/Data/festus_extraction/GH/POLICY_HEADER_life.csv")
+```
+
+`ACCOUNT_NUMBER` is the unique customer identifier.
+
+```{r}
+fread(input = "../../../../../../C - Documentation/Data/festus_extraction/GH/POLICY_HEADER_life.csv") %>% 
+  count(ACCOUNT_NUMBER, sort = TRUE)
+```
+
+## Statements
+
+These are premiums received.
+
+```{r}
+fread(input = "../../../../../../C - Documentation/Data/festus_extraction/GH/LIFE_TRANSACTION_HISTORY.csv")
+```
+
+# PENSION
+
+## Product information
+
+This is not product information.
+
+```{r}
+fread(input = "../../../../../../C - Documentation/Data/festus_extraction/GH/Customer_master_pension.csv")
+```
+
+## Statements
+
+How do we identify premiums received?
+
+```{r}
+fread(input = "../../../../../../C - Documentation/Data/festus_extraction/GH/Life_Policy_Statements_pensions.csv")
+```
+
