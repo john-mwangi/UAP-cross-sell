@@ -179,7 +179,7 @@ shinyServer(function(input, output, session) {
                       newdata = user_choices_ratmat, 
                       type="ratings"),
                error = function(e){
-                 stop("Ensure the products in the upload template match the selected country.")
+                 stop("Ensure the products specified match the selected country.")
                })
     
     #Convert prediction to dataframe

@@ -123,10 +123,6 @@ ug_tibble
 
 ```{r}
 supp_sqlite_path <- "../../../App/uap_cross_sell/db/support.db"
-```
-
-
-```{r}
 con_supp <- dbConnect(drv = RSQLite::SQLite(), supp_sqlite_path)
 ```
 
