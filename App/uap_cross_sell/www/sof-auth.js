@@ -61,6 +61,7 @@ $(document).on("click", "#resend_email_verification", () => {
 $(document).on("click", "#submit_register", () => {
 
   const email = $("#register_email").val()
+  
   const password = $("#register_password").val()
   const password_2 = $("#register_password_verify").val()
   console.log(
@@ -70,7 +71,12 @@ $(document).on("click", "#submit_register", () => {
     password_2
   )
 
-  if (password === password_2 && /uapoldmutual.com$/.test(email)) {
+// password standards
+// let uap_doms = /gmail\.com$|yahoo\.com$/g;
+let uap_doms = /uapoldmutual\.com$|oldmutual\.co\.zw$/g;
+let pass_std = /^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[!@#\$%\^&\*])(?=.{8,})/;
+
+  if (password === password_2 && uap_doms.test(email) && pass_std.test(password)) {
     auth.createUserWithEmailAndPassword(email, password).then((user) => {
 
       user.user.sendEmailVerification()
@@ -85,7 +91,11 @@ $(document).on("click", "#submit_register", () => {
     })
 
   } else {
-    showSnackbar("register_snackbar", "Error: use matching passwords and your company email")
+    showSnackbar("register_snackbar", "Your password should be at least \
+    8 character long and contain at least one: \
+    uppercase and lower case character, \
+    number, \
+    special character")
   }
 })
 
