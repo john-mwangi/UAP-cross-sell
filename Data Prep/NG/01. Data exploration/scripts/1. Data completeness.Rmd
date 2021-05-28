@@ -1,0 +1,66 @@
+---
+title: "Data completeness"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Packages
+
+```{r}
+rm(list = ls())
+
+library(data.table)
+library(tidyverse)
+```
+
+
+Check completeness of information against data requirments.
+
+# GENERAL INS.
+
+## Product information
+
+Product information is available.
+
+```{r}
+fread(input = "../../../../../../C - Documentation/Data/festus_extraction/NG-JM/Policy_Header_Non_Life_GI.csv")
+```
+
+## Statements
+
+These are not statements.
+
+```{r}
+fread(input = "../../../../../../C - Documentation/Data/festus_extraction/NG-JM/GI_Policy_Statements.csv") %>% 
+  count(TRANSACTION_TYPE)
+```
+
+# LIFE INS.
+
+## Product information
+
+This is not product information.
+
+```{r}
+fread(input = "../../../../../../C - Documentation/Data/festus_extraction/NG-JM/Policy_Life_20210504_compen_life.csv")
+
+readxl::read_excel(path = "../../../../../../C - Documentation/Data/festus_extraction/NG-JM/Policy_Header_Life.csv_gibbs_life.xlsx")
+```
+
+## Statements
+
+How do we identify premiums received?
+
+```{r}
+fread(input = "../../../../../../C - Documentation/Data/festus_extraction/NG-JM/Life_Policy_Statements_20210504_compen_life.csv")
+
+# How do we identify premium statements?
+readxl::read_excel(path = "../../../../../../C - Documentation/Data/festus_extraction/NG-JM/Life_Policy_Statements.csv_gibbs_life.xlsx")
+
+
+fread(input = "../../../../../../C - Documentation/Data/festus_extraction/NG-JM/LifePolicyStatements_20210301_195929_oipa_life.csv")
+```
+
