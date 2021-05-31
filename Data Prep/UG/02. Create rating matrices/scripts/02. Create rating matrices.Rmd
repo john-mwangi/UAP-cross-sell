@@ -147,7 +147,7 @@ class(products_rating_matrix)
 saveRDS(object = products_rating_matrix,
         file = "../../product_holding/products_rating_matrix.rds")
 
-save.image("./27May_RatingMatrix.RData")
-load("./27May_RatingMatrix.RData")
+save.image("./31May_RatingMatrix.RData")
+load("./31May_RatingMatrix.RData")
 ```
 

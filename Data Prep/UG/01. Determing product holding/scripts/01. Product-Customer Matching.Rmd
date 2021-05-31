@@ -299,8 +299,8 @@ saveRDS(object = gi_products_raw,
         file = "../../product_holding/gi_products_raw.rds")
 
 # Project image
-save.image(file = "./27May_Product_Cust_Matching.RData")
-load("27May_Product_Cust_Matching.RData")
+save.image(file = "./31May_Product_Cust_Matching.RData")
+load("31May_Product_Cust_Matching.RData")
 ```
 
 

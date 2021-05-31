@@ -312,12 +312,6 @@ gi_agent_info
 
 ## Accounts <=> Customers
 
-Number of account that match between gi_accounts and gi_clients_raw
-
-```{r}
-length(intersect(x = gi_accounts$ACCOUNT_NO, y = gi_clients_raw$ACCOUNT_NO))
-```
-
 ```{r}
 gi_clients_1 <-
 readxl::read_xls("../../../../../../Uganda/GI/clients_uganda.xls", sheet = 1)
@@ -640,7 +634,7 @@ bind_rows(health_accounts,
   select(ACCOUNT_NO, ownership, product_count, products)
 
 dim(account_info)
-View(account_info)
+head(account_info)
 ```
 
 ## Test
@@ -794,8 +788,8 @@ write_csv(x = ug_recommendations_detailed %>% select(-customer_details),
           file = "./recommendations_df.csv")
 
 # Project image
-save.image("./27May_Customer_details.RData")
-load("./27May_Customer_details.RData")
+save.image("./31May_Customer_details.RData")
+load("./31May_Customer_details.RData")
 ```
 
 

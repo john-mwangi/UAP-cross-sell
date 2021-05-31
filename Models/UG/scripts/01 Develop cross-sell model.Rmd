@@ -391,6 +391,11 @@ ug_hybrid = HybridRecommender(ug_ibcf, ug_pop, weights=c(0.9, 0.1))
 ug_rec_model = ug_hybrid
 ```
 
+```{r}
+(ug_rec_model)
+```
+
+
 # USER RATINGS
 
 ## Extract ratings
@@ -706,11 +711,6 @@ ug_recommendations_detailed <- readRDS(file = "./ug_recommendations_detailed.rds
 ```{r}
 copy_to(dest = con, 
         df = ug_recommendations_detailed, 
-        overwrite = TRUE, 
-        temporary = FALSE)
-
-copy_to(dest = con, 
-        df = ug_recommendations_detailed, 
         name = "recommendations_detailed",
         overwrite = TRUE, 
         temporary = FALSE)
@@ -721,7 +721,7 @@ Confirm dataframes have been created as database tables
 ```{r}
 dbListTables(conn = con)
 
-tbl(src = con, "ug_recommendations_detailed")
+tbl(src = con, "recommendations_detailed")
 ```
 
 
@@ -758,7 +758,7 @@ ug_recommendations_detailed %>%
 Database replication of the above results.
 
 ```{r}
-tbl(src = con, "ug_recommendations_detailed") %>%
+tbl(src = con, "recommendations_detailed") %>%
   filter(ACCOUNT_NO %in% records) %>%
   group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
   arrange(desc(rating)) %>% 
@@ -785,7 +785,7 @@ Create a sample of intermediated and unintermediated customers.
 Obtain a recommendations of non-intermediated customers with 3 recommended products per business line belonging to Health insurance that can purchase a product that's worth between 1M and 3M.
 
 ```{r}
-tbl(src = con, "ug_recommendations_detailed") %>% 
+tbl(src = con, "recommendations_detailed") %>% 
   group_by(ACCOUNT_NO, BUSINESS_LINE) %>%
   filter(intermediated=="No") %>% 
   filter(ownership=="Health") %>%
