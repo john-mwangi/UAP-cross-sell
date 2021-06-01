@@ -98,6 +98,29 @@ read_csv(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/c
 lending_customers_raw
 ```
 
+## Banking
+
+Banking customers do not have agents.
+
+```{r}
+fread(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_t24_banking.csv") %>% 
+  filter(!is.na(AGENT_CODE))
+
+fread(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_postilion_banking.csv") %>% 
+  filter(!is.na(AGENT_CODE))
+```
+
+
+```{r}
+banking_customers_raw <-
+readRDS(file = "../../01. Determine product holding/outputs/objects/banking_product_holding.rds") %>% 
+  distinct(CUSTOMER_NUMBER) %>% 
+  mutate(AGENT_CODE = NA,
+         intermediated = "No")
+
+banking_customers_raw
+```
+
 
 ## Customer agents
 
@@ -266,9 +289,8 @@ saveRDS(object = customer_details_final,
 #Product business lines
 saveRDS(product_businesslines,"../outputs/product_businesslines.rds")
 
-
 # Project image
-save.image("../outputs/19May_Customer_details.RData")
+save.image("../outputs/27May_Customer_details.RData")
 ```
 
 

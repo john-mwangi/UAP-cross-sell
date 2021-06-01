@@ -47,7 +47,7 @@ sidebarLayout(
                                         that you'd want to target and you have their account number."),
                              textInput(inputId = "customer_ids", 
                                        label = "Enter account numbers separated by commas",
-                                       value = "1337,1418,100003,101403"),
+                                       value = "1337,100003,0000013188"),
                              withSpinner(dataTableOutput(outputId = "customer_recomms"), color = "#78C2AD")),
                     
                     tabPanel(title = "CUSTOMERS",
