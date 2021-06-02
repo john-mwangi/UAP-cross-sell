@@ -33,7 +33,7 @@ readRDS(file = "../../02. Determine product holding/outputs/life_product_holding
 
 # Merge the tables
 
-As we merge all the table 
+We merge all the tables.
 
 ```{r}
 products_df_raw <-
@@ -43,21 +43,6 @@ rbind(life_product_holding,
 
 products_df_raw
 ```
-
-# Change values to either 0 or 1
-
-```{r}
-products_df_raw %>% 
-  count(n)
-
-products_df_raw <-
-products_df_raw %>% 
-  distinct(ACCOUNT_NO, PRODUCT) %>% 
-  count(ACCOUNT_NO, PRODUCT)
-
-products_df_raw
-```
-
 
 # Overall product holding
 
@@ -105,16 +90,16 @@ head(products_df)
 ```
 
 
-# Missing account numbers
+# Sense checks
 
 ```{r}
-setdiff(x = asset_product_holding$ACCOUNT_NO, 
-        y = products_df$ACCOUNT_NO)
+# Missing Account Numbers
+dim(products_df)
+length(unique(products_df_raw$ACCOUNT_NO))
 
-setdiff(x = life_product_holding$ACCOUNT_NO, 
-        y = products_df$ACCOUNT_NO)
+
+anyNA(products_df)
 ```
-
 
 # Convert to matrix
 
@@ -127,16 +112,6 @@ products_df %>%
 rownames(products_matrix) <- products_df %>% pull(ACCOUNT_NO)
 ```
 
-# Check matrix
-
-Check for NA values in the product names.
-
-```{r}
-products_matrix %>% 
-  colnames() %>% 
-  str_detect(string = ., pattern = "NA") %>% 
-  sum()
-```
 
 ```{r}
 rownames(products_matrix)[1:10]
@@ -158,12 +133,7 @@ dim(products_rating_matrix)
 
 # Notes
 
-It should be indicated on the app that Account Number is:
-* Asset Mgt: ACCOUNT_NUMBER
-* Life Ins: CUSTOMER_NUMBER
-* General Ins: CUSTOMER_NO
-* Lending: account_no
-* Banking: CUSTOMER_NUMBER
+
 
 # Export
 
@@ -171,7 +141,7 @@ It should be indicated on the app that Account Number is:
 saveRDS(object = products_rating_matrix, 
         file = "../outputs/products_rating_matrix.rds")
 
-save.image("../outputs/27May_RatingMatrix.RData")
+save.image("../outputs/02June_RatingMatrix.RData")
 #load("./05May_RatingMatrix.RData")
 ```
 
