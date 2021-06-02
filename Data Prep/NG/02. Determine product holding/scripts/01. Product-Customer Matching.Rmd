@@ -146,21 +146,30 @@ oipa_raw %>%
   filter(ACCOUNT_NUMBER=="0000001045")
 ```
 
+## Life products
+
+Merge all products from different life insurance systems into one.
+
+```{r}
+life_products <-
+rbind(
+  gibbs_raw %>% 
+    select(ACCOUNT_NUMBER, CONTRACT_GROUP_NAME, AGENT_CONTRACT_ID),
+  oipa_raw %>% 
+    select(ACCOUNT_NUMBER, CONTRACT_GROUP_NAME, AGENT_CONTRACT_ID)
+  )
+
+life_products
+```
+
 
 ## Product holding
 
 ```{r}
 life_product_holding <-
-gibbs_raw %>% 
-  select(ACCOUNT_NUMBER,CONTRACT_GROUP_NAME) %>% 
-  mutate(system = "gibbs") %>% 
-  rbind(
-    oipa_raw %>% 
-      select(ACCOUNT_NUMBER,CONTRACT_GROUP_NAME) %>% 
-      mutate(system = "oipa")) %>% 
-  distinct(ACCOUNT_NUMBER, CONTRACT_GROUP_NAME, .keep_all = TRUE) %>% 
-  count(ACCOUNT_NUMBER, CONTRACT_GROUP_NAME) %>% 
-  filter(!is.na(ACCOUNT_NUMBER) & !is.na(CONTRACT_GROUP_NAME))
+  life_products %>% 
+  distinct(ACCOUNT_NUMBER,CONTRACT_GROUP_NAME) %>% 
+  count(ACCOUNT_NUMBER, CONTRACT_GROUP_NAME)
 
 life_product_holding
 ```
@@ -181,12 +190,14 @@ life_product_holding %>%
 
 ```{r}
 save.image(file = "../outputs/02June.RData")
-#load(file = "../outputs/images/24May.RData")
+#load(file = "../outputs/02June.RData")
 
 saveRDS(object = general_product_holding, 
         file = "../outputs/general_product_holding.rds")
 saveRDS(object = life_product_holding, 
         file = "../outputs/life_product_holding.rds")
+saveRDS(object = life_products,
+        file = "../outputs/life_products.rds")
 ```
 
 
