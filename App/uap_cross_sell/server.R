@@ -5,7 +5,7 @@ library(DBI)
 library(RSQLite)
 library(tidyverse)
 
-round_off <- 3
+ROUND_OFF <- 3
 
 shinyServer(function(input, output, session) {
   
@@ -198,7 +198,7 @@ shinyServer(function(input, output, session) {
       arrange(desc(rating), .by_group = TRUE) %>% 
       slice(1:recomm_limit) %>% 
       select(-accounts) %>% 
-      mutate(rating = round(rating, round_off)) %>% 
+      mutate(rating = round(rating, ROUND_OFF)) %>% 
       rename(value = product_value) %>% 
       setNames(str_to_upper(colnames(.)))
     
@@ -220,8 +220,8 @@ shinyServer(function(input, output, session) {
       collect() %>% 
       slice(1:input$recomm_limit) %>% 
       arrange(desc(max_rating)) %>% 
-      mutate(max_rating = round(max_rating, round_off),
-             rating = round(rating, round_off)) %>% 
+      mutate(max_rating = round(max_rating, ROUND_OFF),
+             rating = round(rating, ROUND_OFF)) %>% 
       rename(inter = intermediated,
              value = product_value) %>% 
       setNames(str_to_upper(colnames(.)))
@@ -247,8 +247,8 @@ shinyServer(function(input, output, session) {
       collect() %>% 
       slice(1:input$recomm_limit) %>%
       head(1000) %>% 
-      mutate(max_rating = round(max_rating, round_off),
-             rating = round(rating, round_off)) %>%
+      mutate(max_rating = round(max_rating, ROUND_OFF),
+             rating = round(rating, ROUND_OFF)) %>%
       rename(inter = intermediated,
              value = product_value) %>% 
       setNames(str_to_upper(colnames(.)))
@@ -301,8 +301,8 @@ shinyServer(function(input, output, session) {
       collect() %>% 
       slice(1:input$recomm_limit) %>% 
       arrange(desc(max_rating)) %>%
-      mutate(max_rating = round(max_rating, round_off),
-             rating = round(rating, round_off)) %>%
+      mutate(max_rating = round(max_rating, ROUND_OFF),
+             rating = round(rating, ROUND_OFF)) %>%
       rename(inter = intermediated,
              value = product_value) %>% 
       setNames(str_to_upper(colnames(.)))
