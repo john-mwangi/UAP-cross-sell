@@ -659,12 +659,6 @@ con <- dbConnect(drv = SQLite(), sqlite_path)
 dbListTables(conn = con)
 ```
 
-```{r}
-product_values <- readRDS("../../../Data Prep/UG/product_holding/product_values.rds")
-
-# copy_to(dest = con, df = product_values, overwrite = TRUE, temporary = FALSE)
-```
-
 
 ```{r}
 copy_to(dest = con, 
@@ -721,7 +715,10 @@ Confirm dataframes have been created as database tables
 ```{r}
 dbListTables(conn = con)
 
-tbl(src = con, "recommendations_detailed")
+tbl(src = con, "recommendations_detailed") %>% 
+  collect() %>% dim()
+
+dim(ug_recommendations_detailed)
 ```
 
 
@@ -783,6 +780,15 @@ We allow the end-user get the top n recommended customers based on this criteria
 Create a sample of intermediated and unintermediated customers.
 
 Obtain a recommendations of non-intermediated customers with 3 recommended products per business line belonging to Health insurance that can purchase a product that's worth between 1M and 3M.
+
+```{r}
+ug_recommendations_detailed %>%
+  group_by(ACCOUNT_NO, BUSINESS_LINE) %>%
+  filter(intermediated=="No") %>% 
+  filter(ownership=="Health") %>%
+  filter(product_value>=1000000 & product_value<=3000000)
+```
+
 
 ```{r}
 tbl(src = con, "recommendations_detailed") %>% 
@@ -885,14 +891,16 @@ as(user_choice_recommendations, "data.frame") %>%
 Convert to a user function
 
 ```{r}
-predict_on_choices <- function(user_choices){
+predict_on_choices <- function(user_choices, recomm_limit){
   
   #Products not selected
   not_user_choices <- colnames(products_rating_matrix)[!colnames(products_rating_matrix) %in% user_choices]
   
   #Convert to a table
   choices <- 
-    tibble(choice = rep(x = c(1,0), times = c(length(user_choices), length(not_user_choices))
+    tibble(choice = rep(x = c(1,0), 
+                        times = c(length(user_choices), 
+                                  length(not_user_choices))
     ))
 
 user_choices_df <-
@@ -920,11 +928,12 @@ user_choice_recommendations_df <-
 as(user_choice_recommendations, "data.frame") %>% 
   rename(PRODUCT = item) %>%
   left_join(product_businesslines, by = "PRODUCT") %>% 
+  left_join(product_values, by = "PRODUCT") %>% 
   relocate(BUSINESS_LINE, .after = PRODUCT) %>% 
   group_by(BUSINESS_LINE) %>% 
   arrange(desc(rating), .by_group = TRUE) %>% 
-  left_join(tbl(src = con, "product_values") %>% collect(), 
-            by = "PRODUCT") %>% 
+  slice(1:recomm_limit) %>% 
+  select(-accounts)
 
 return(user_choice_recommendations_df)
 }
@@ -936,7 +945,7 @@ head(user_choices)
 
 
 ```{r}
-print (predict_on_choices(user_choices))
+predict_on_choices(user_choices, 3)
 ```
 
 ## Scenario 4
@@ -1023,7 +1032,7 @@ ug_recommendations_detailed %>%
 Replicate the above results in SQL
 
 ```{r}
-tbl(src = con, "ug_recommendations_detailed") %>%
+tbl(src = con, "recommendations_detailed") %>%
   filter(ACCOUNT_NO %in% acc_nums_upload) %>%
   group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
   arrange(desc(rating)) %>% 
@@ -1110,7 +1119,7 @@ as(user_choice_recommendations, "data.frame") %>%
 ```
 
 ```{r}
-2+2
+predict_on_choices(user_choices, 5)
 ```
 
 
@@ -1150,10 +1159,10 @@ saveRDS(object = product_businesslines,
         file = "../../../App/uap_cross_sell/objects/product_businesslines.rds")
 # 
 # Project image
-save.image(file = "./27May_Models.RData")
+save.image(file = "./7June_Models.RData")
 
 # Image containing trained model
-load("./27May_Models.RData")
+load("./31May_Models.RData")
 
 # Ojects for deployment
 saveRDS(object = ug_rec_model, 

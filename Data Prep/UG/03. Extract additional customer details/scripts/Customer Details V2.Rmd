@@ -1,0 +1,240 @@
+---
+title: "Customer Details V2"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# PACKAGES
+
+```{r message=FALSE, warning=FALSE}
+rm(list = ls())
+
+library(recommenderlab)
+library(glue)
+library(data.table)
+library(dtplyr)
+library(readxl)
+library(tidyverse)
+```
+
+# OBJECTIVE
+
+When hovering on a customer in the app, it should display whether a customer is intermediated (and agent code) and product details (number and name of products).
+
+Extract the following details:
+* Agent code tied to a customer
+* Number of products held by a customer across the subsidiary and their names
+* Business lines that owns the customer across the subsidiary
+* Merge products held and agent code into a single column
+
+# AGENT DETAILS
+
+## General Insurance
+
+```{r}
+gi_products_1 <- read_xls(path = "../../../../../../Uganda/GI/policyheader_nonlife_uganda.xls", sheet = 1, col_types = "text")
+
+gi_products_2 <- read_xls(path = "../../../../../../Uganda/GI/policyheader_nonlife_uganda.xls", sheet = 2, col_types = "text")
+
+gi_products_3 <- read_xls(path = "../../../../../../Uganda/GI/policyheader_nonlife_uganda.xls", sheet = 3, col_types = "text")
+```
+
+
+```{r}
+gi_products_raw <-
+rbind(gi_products_1, gi_products_2, gi_products_3) %>% 
+  as.data.table()
+
+```
+
+```{r}
+gi_customers_raw <-
+  gi_products_raw %>%
+    filter (!is.na(ACCOUNT_NO)) %>%
+    distinct (ACCOUNT_NO, INTERMEDIARY_CODE) %>%
+    mutate (intermediated = if_else(!is.na(INTERMEDIARY_CODE), "Yes", "No")) %>%
+    rename (AGENT_CODE = INTERMEDIARY_CODE) %>%
+    as.data.table()
+
+```
+
+```{r}
+gi_customers_raw
+```
+
+## Health Insurance
+
+```{r}
+health_customers_raw <-
+fread(file = "../../../../../../Uganda/Health/ug_health_products_matched (2).csv") %>% 
+  filter (!is.na(ACCOUNT_NO)) %>%
+  mutate (INTERMEDIARY_CODE = na_if(INTERMEDIARY_CODE, "NULL")) %>%
+  distinct (ACCOUNT_NO, INTERMEDIARY_CODE) %>%
+  mutate (intermediated = if_else(!is.na(INTERMEDIARY_CODE), "Yes", "No")) %>%
+  rename (AGENT_CODE = INTERMEDIARY_CODE) %>%
+  as_tibble()
+```
+
+
+```{r}
+customer_agents <- 
+  rbind(gi_customers_raw, health_customers_raw) %>% 
+  distinct(ACCOUNT_NO, .keep_all = TRUE) %>%
+  as_tibble()
+
+customer_agents
+```
+
+
+# ACCOUNT INFO
+
+Across the subsidiary
+
+## Product count
+
+```{r}
+products_rating_matrix <-
+readRDS("../../product_holding/products_rating_matrix.rds")
+
+dim(products_rating_matrix)
+```
+
+
+```{r}
+product_count <-
+as(products_rating_matrix, "data.frame") %>% 
+  select(user, item) %>% 
+  count(user, name = "product_count") %>% 
+  rename(ACCOUNT_NO = user)
+
+product_count
+```
+
+
+## Customer products
+
+```{r}
+gc()
+
+customer_products <-
+as(products_rating_matrix, "data.frame") %>% 
+  group_by(user) %>% 
+  mutate(products = paste0(item, collapse = ", ")) %>% 
+  distinct(user, .keep_all = TRUE) %>% 
+  select(ACCOUNT_NO = user, products)
+
+customer_products
+```
+
+## Ownership
+
+Define business lines to which products belong to.
+
+```{r}
+health_products <-
+readRDS("../../product_holding/health_product_holding_final.rds") %>% 
+  distinct(PRODUCT = Product) %>%
+  mutate(BUSINESS_LINE = "Health") %>%
+  as_tibble()
+
+gi_products <-
+readRDS("../../product_holding/gi_product_holding_final.rds") %>% 
+  distinct(PRODUCT = POLICY_TYPE) %>%
+  mutate(BUSINESS_LINE = "General") %>%
+  as_tibble()
+```
+
+```{r}
+product_businesslines <-
+rbind(health_products,
+      gi_products) %>%
+  as_tibble()
+
+product_businesslines
+```
+
+
+```{r}
+customer_ownership <-
+as(products_rating_matrix, "data.frame") %>% 
+  select(ACCOUNT_NO = user, PRODUCT = item) %>% 
+  left_join(product_businesslines, by = "PRODUCT") %>% 
+  group_by(ACCOUNT_NO) %>% 
+  mutate(ownership = paste0(unique(BUSINESS_LINE), collapse = ", ")) %>% 
+  select(ACCOUNT_NO, ownership) %>% 
+  distinct(ACCOUNT_NO, .keep_all = TRUE)
+
+customer_ownership %>%
+  ungroup() %>%
+  count(ownership)
+```
+
+## Account info
+
+```{r}
+account_info <-
+customer_products %>% 
+  left_join(product_count, by = "ACCOUNT_NO") %>% 
+  left_join(customer_ownership, by = "ACCOUNT_NO")
+
+account_info
+```
+
+## Checks
+
+```{r}
+account_info %>% 
+  ungroup() %>% 
+  filter(str_detect(ownership,",")) %>% 
+  count(ownership)
+```
+
+# CUSTOMER DETAILS
+
+Merge account and agent information.
+
+```{r}
+rm(customer_details_final)
+
+gc()
+
+job::job({
+customer_details_final <-
+account_info %>% 
+  left_join(customer_agents, by = "ACCOUNT_NO") %>% 
+  mutate(customer_details = glue("Agent Code:{AGENT_CODE}
+                                 Product Holding:{product_count}
+                                 Current Products:{products}", 
+                                 .na = "Not Found")) %>% 
+  select(-AGENT_CODE,-product_count,-products) %>% 
+  ungroup()
+}, title = "Customer details")
+
+gc()
+```
+
+
+```{r}
+customer_details_final
+```
+
+
+# EXPORT
+
+```{r}
+# Detailed Recommendations
+saveRDS(object = customer_details_final, 
+        file = "../outputs/customer_details_final.rds")
+
+#Product business lines
+saveRDS(product_businesslines,"../outputs/product_businesslines.rds")
+
+# Project image
+save.image("../outputs/7June_Customer_details.RData")
+```
+
+
+

@@ -98,6 +98,9 @@ products_df_raw %>%
 
 dim(products_df)
 head(products_df)
+
+products_df %>% 
+  filter(ACCOUNT_NO == '0000079656')
 ```
 
 

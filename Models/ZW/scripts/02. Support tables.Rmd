@@ -50,7 +50,7 @@ ug_ownership
 ```
 
 ```{r}
-supp_sqlite_path_ug <- "../../../App/uap_cross_sell/db/support_tayo.db"
+supp_sqlite_path_ug <- "../../../App/uap_cross_sell/db/support.db"
 con_supp_ug <- dbConnect(drv = RSQLite::SQLite(), supp_sqlite_path_ug)
 
 ug_ownership <-
@@ -73,7 +73,7 @@ ke_products <- readRDS(file = "../../../Data Prep/KE/02. Create rating matrices/
 zw_products <- readRDS(file = "../../../Data Prep/ZW/02. Create rating matrices/outputs/products_rating_matrix.rds") %>%
   colnames()
 
-ug_products <- readRDS(file = "../../../Data Prep/UG/02. Create rating matrices/outputs/products_rating_matrix.rds") %>% 
+ug_products <- readRDS(file = "../../../Data Prep/UG/product_holding/products_rating_matrix.rds") %>% 
   colnames()
 
 length(ke_products)
@@ -136,7 +136,20 @@ copy_to(dest = con_supp,
 ```
 
 
+
 ## Updating support db with UG tibble
+
+```{r}
+support_df <- 
+tbl(src = con_supp, "support") %>%
+  filter (country != "Uganda") %>%
+  collect()
+```
+
+```{r}
+copy_to(dest = con_supp, df=support_df, "support", overwrite = TRUE, temporary = FALSE)
+```
+
 
 ```{r}
 dbWriteTable(con = con_supp, "support", ug_tibble, append=TRUE, row.names = FALSE)

@@ -1,0 +1,100 @@
+---
+title: "Product-Customer Matching"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# PACKAGES
+
+```{r message=FALSE, warning=FALSE}
+rm(list = ls())
+
+library(readxl)
+library(data.table)
+library(tidyverse)
+```
+
+# LIFE INSURANCE
+
+## Data exploration
+
+Life insurance products
+
+```{r}
+life_products_raw <-
+read_csv(file = "../../../../../../Ghana/Life/POLICY_HEADER.csv") %>% 
+  unite(col = PRODUCT, c(CONTRACT_GROUP_NAME), sep = "_") %>% 
+  select(ACCOUNT_NUMBER, PRODUCT) %>% 
+  mutate(PRODUCT = str_remove(string = PRODUCT, pattern = "_NA$")) %>% 
+  filter(str_length(ACCOUNT_NUMBER) > 0) %>%
+  filter(!is.na(ACCOUNT_NUMBER))
+
+(life_products_raw)
+```
+
+`CUSTOMER_NUMBER` is the unique customer identifier.
+
+## Product holding
+
+```{r}
+life_product_holding <-
+life_products_raw %>% 
+  distinct(ACCOUNT_NUMBER, PRODUCT) %>% 
+  add_count(ACCOUNT_NUMBER, PRODUCT)
+
+life_product_holding
+```
+## Sense check
+
+Check NAs
+
+```{r}
+life_product_holding %>% distinct(PRODUCT)
+
+life_product_holding %>% filter(str_detect(ACCOUNT_NUMBER,"NA"))
+```
+
+
+Check each product is mapped once per customer.
+
+```{r}
+unique(life_product_holding$n)
+```
+Check that a customer can have many products under them.
+
+```{r}
+life_product_holding %>% 
+  count(ACCOUNT_NUMBER, sort = TRUE)
+```
+
+Number of products
+
+```{r}
+life_product_holding %>% 
+  count(PRODUCT)
+```
+
+
+
+# EXPORT
+
+```{r}
+#dir.create("../outputs/objects", recursive = TRUE)
+save.image(file = "./7June.RData")
+
+saveRDS(object = life_product_holding, 
+        file = "../../product_holding/life_product_holding.rds")
+```
+
+
+
+
+
+
+
+
+

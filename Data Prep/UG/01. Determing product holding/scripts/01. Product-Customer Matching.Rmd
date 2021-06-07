@@ -18,6 +18,8 @@ library(tidyverse)
 
 # HEALTH PRODUCTS
 
+## Previous Implementation of Product Holding
+
 Pick product details: product names & customer account number.
 
 ```{r}
@@ -30,6 +32,16 @@ health_products_raw <-
 head(health_products_raw)
 ```
 
+
+
+## Health Products (New)
+```{r}
+health_products_raw <- 
+  fread(file = "../../../../../../Uganda/Health/ug_health_products_matched.csv")
+
+unique(health_products_raw$PRODUCT)
+```
+
 ## Product Holding
 
 The table below returns a table showing products held by each account (1 product, 1 account). n should be 1 in all cases.
@@ -37,13 +49,13 @@ The table below returns a table showing products held by each account (1 product
 ```{r}
 health_prod_holding <-
 health_products_raw %>% 
-  distinct(ACCOUNT_NO, `BENEFIT DESCRIPTION`) %>% 
-  filter (!`BENEFIT DESCRIPTION` == "NULL") %>%
-  count(ACCOUNT_NO,`BENEFIT DESCRIPTION`) %>% 
+  distinct(ACCOUNT_NO, `PRODUCT`) %>% 
+  filter (!`PRODUCT` == "NULL") %>%
+  count(ACCOUNT_NO,`PRODUCT`) %>% 
   arrange(desc(n))
 
 health_prod_holding %>%
-  distinct(`BENEFIT DESCRIPTION`)
+  distinct(`PRODUCT`)
 
 ```
 
@@ -77,7 +89,8 @@ health_product_holding_final <- health_prod_holding %>%
 #             select(ACCOUNT_NO, `BENEFIT DESCRIPTION`, COVER_TYPE) %>% 
 #             filter(COVER_TYPE=="RETAIL"),  
 #             by = c("ACCOUNT_NO", "BENEFIT DESCRIPTION")) %>%
-            rename("Product" = "BENEFIT DESCRIPTION")
+    filter (!is.na(ACCOUNT_NO)) %>%
+    rename("Product" = "PRODUCT")
 # Include amended rows
   # bind_rows(health_products_amended)
 
@@ -137,12 +150,15 @@ gi_products_3 <- read_xls(path = "../../../../../../Uganda/GI/policyheader_nonli
 
 ```{r}
 gi_products_raw <-
-bind_rows(gi_products_1, gi_products_2, gi_products_3) %>% 
+rbind(gi_products_1, gi_products_2, gi_products_3) %>% 
   as.data.table()
 
 class(gi_products_raw)
 dim(gi_products_raw)
 head(gi_products_raw)
+
+gi_products_3 %>% 
+  filter(ACCOUNT_NO == '0000464446')
 ```
 
 Clean up the memory.
@@ -172,7 +188,7 @@ gi_products_raw %>%
 ```
 
 ```{r}
-gi_products_raw %>% count(POLICY_TYPE) 
+gi_products_raw %>% filter(ACCOUNT_NO == '0000464446') 
 ```
 
 ```{r}

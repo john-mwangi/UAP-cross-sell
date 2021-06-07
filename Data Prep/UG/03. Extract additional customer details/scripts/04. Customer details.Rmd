@@ -94,7 +94,8 @@ customer_products <- as(products_rating_matrix, "data.frame") %>%
          PRODUCT = item) %>% 
   left_join(product_businesslines, by = "PRODUCT")
 
-customer_products
+customer_products %>% 
+  filter(ACCOUNT_NO == '0000079656')
 ```
 
 # HEALTH INSURANCE
@@ -136,7 +137,7 @@ health_customers <- read_xlsx("../../../../../../Uganda/Health/health_customer_u
 ```
 
 ```{r}
-tail(health_customers)
+head(health_customers)
 ```
 
 Health insurance products.
@@ -164,7 +165,7 @@ Match customer details to product information.
 ```{r}
 health_customer_info <-
 health_acc_products %>% 
-  left_join(health_customers, by = c("MEMBER_NO"="PRI_ACCOUNT_NO")) %>% 
+  left_join(health_customers , by = c("MEMBER_NO"="PRI_ACCOUNT_NO")) %>% 
   rename(ACCOUNT_NO = ACCOUNT_NO.x) %>% 
   select(any_of(x = customer_attributes)) %>% 
   mutate(ACCOUNT_NO = as.character(ACCOUNT_NO))%>% 
@@ -176,6 +177,21 @@ dim(health_customer_info)
 head(health_customer_info)
 ```
 
+```{r}
+health_customer_info <-
+health_product_holding_final %>% 
+            select(ACCOUNT_NO) %>% 
+  left_join(health_customers, by = c("ACCOUNT_NO"="ACCOUNT_NO")) %>% 
+  # rename(ACCOUNT_NO = ACCOUNT_NO.y) %>% 
+  select(any_of(x = customer_attributes)) %>% 
+  mutate(ACCOUNT_NO = as.character(ACCOUNT_NO))%>% 
+  group_by(ACCOUNT_NO) %>% 
+  slice(1) %>% 
+  ungroup()
+
+dim(health_customer_info)
+head(health_customer_info)
+```
 
 ## Accounts <=> Agent
 
@@ -203,7 +219,7 @@ health_accounts %>%
   select(ACCOUNT_NO, AGENT_CODE) %>% 
   distinct(ACCOUNT_NO, .keep_all = TRUE)
 
-head(health_agent_info)
+(health_agent_info)
 ```
 
 ## Health customer details
@@ -220,7 +236,7 @@ health_accounts %>%
   left_join(health_customer_info, by = "ACCOUNT_NO")
 
 dim(health_customer_details)
-head(health_customer_details)
+View(health_customer_details)
 ```
 ## Intermediated
 
@@ -272,7 +288,8 @@ gi_accounts <-
 customer_products %>% 
   filter(BUSINESS_LINE=="General")
 
-gi_accounts
+gi_accounts %>% 
+  filter(ACCOUNT_NO == '0000464446')
 ```
 
 
@@ -307,7 +324,8 @@ gi_products_raw %>%
   # mutate(ACCOUNT_NO = as.integer(ACCOUNT_NO)) %>%
   #           mutate(ACCOUNT_NO = as.character(ACCOUNT_NO))
 
-gi_agent_info
+gi_agent_info %>%
+  filter (ACCOUNT_NO == '0000464446')
 ```
 
 ## Accounts <=> Customers
@@ -368,13 +386,12 @@ gi_customer_details <-
 gi_accounts %>% 
   select(ACCOUNT_NO) %>% 
   left_join(gi_agent_info, by = "ACCOUNT_NO") %>%
-  mutate(intermediated = replace_na("No")) %>%
-  # filter(is.na(INTERMEDIARY_CODE))
   left_join(gi_customer_info, by = "ACCOUNT_NO") %>%
   distinct(ACCOUNT_NO, .keep_all = TRUE)
 
 dim(gi_customer_details)
-gi_customer_details
+gi_customer_details %>%
+  filter(ACCOUNT_NO == '0000464446')
 ```
 
 
@@ -565,6 +582,7 @@ saveRDS(object = gi_statement_raw, file = "../../product_holding/gi_statement_ra
 ```{r}
 rm(gi_statement_1, gi_statement_2, gi_statement_3, gi_statement_4, gi_statement_5, gi_statement_6, gi_statement_7, gi_statement_8, gi_statement_9, gi_statement_10, gi_statement_11, gi_statement_12, gi_statement_13)
 ```
+
 
 
 ### Add Product Names
@@ -789,7 +807,7 @@ write_csv(x = ug_recommendations_detailed %>% select(-customer_details),
 
 # Project image
 save.image("./31May_Customer_details.RData")
-load("./31May_Customer_details.RData")
+load("../../../../Models/UG/scripts/31May_Models.RData")
 ```
 
 
