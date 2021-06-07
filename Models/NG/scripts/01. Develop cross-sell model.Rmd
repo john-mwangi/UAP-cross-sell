@@ -1,0 +1,758 @@
+---
+title: "Develop cross-sell model"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# PACKAGES
+
+```{r message=FALSE, warning=FALSE}
+rm(list = ls())
+
+library(recommenderlab)
+library(DBI)
+library(RSQLite)
+library(tidyverse)
+```
+
+
+# VALIDATION
+
+## Evaluation scheme
+
+
+```{r}
+products_rating_matrix <-
+readRDS(file = "../../../Data Prep/NG/03. Create rating matrices/outputs/products_rating_matrix.rds")
+
+dim(products_rating_matrix)
+```
+
+Train-test split. Since most customers hold just one product, a cross-validated training cannot be done.
+
+```{r}
+summary(rowCounts(products_rating_matrix))
+```
+
+```{r}
+es <- 
+evaluationScheme(data = products_rating_matrix, 
+                 method = "split",
+                 train = 0.7,
+                 k = 1,
+                 given = 1)
+```
+
+## List of recommenders
+
+```{r}
+recommenderRegistry$get_entry_names()
+```
+
+AR removed as it does not provide meaningful results despite reducing confidence to 0.0
+
+```{r}
+algorithms <- list(
+  popular = list(name = "POPULAR", param = NULL),
+  ibcf = list(name = "IBCF", param = NULL),
+  ubcf = list(name = "UBCF", param = NULL),
+  random = list(name = "RANDOM", param = NULL),
+  rerecommend = list(name = "RERECOMMEND", param = NULL),
+  ar = list(name = "AR", param = list(confidence = 0.0)))
+```
+
+## Obtain evaluation results
+
+```{r}
+gc()
+
+doParallel::registerDoParallel(parallel::detectCores())
+
+ev_list <- 
+evaluate(x = es,
+         method = algorithms,
+         type = "topNList",
+         n = seq(1,10,1))
+
+doParallel::stopImplicitCluster()
+
+gc()
+```
+
+# EVALUATION METRICS
+
+## Definition
+
+Reference: [Precision-Recall formula](https://en.wikipedia.org/wiki/Precision_and_recall) in the Information Retrieval context.
+
+Precision: Out of all the recommendations returned by the tool, how many of those were relevant? Having a high number here means that many of the products recommended were relevant to the customer. This can be viewed as a measure of false-positives.
+
+Recall: Out of all the recommendations returned by the tool, were all relevant recommendation in that list or some were missing? Having a high number here means that at least one of those products being recommended was relevant.
+
+## PR Curves
+
+```{r}
+names(ev_list)
+```
+
+
+```{r}
+plot(x = ev_list, y = "prec/rec", annotate=TRUE, legend="topleft")
+```
+
+## Metrics
+
+```{r}
+avg(ev_list$ibcf) %>% 
+  as_tibble() %>% 
+  select(precision,recall,FPR,TPR,n) %>% 
+  filter(n %in% c(1,2,3))
+```
+
+# MODEL TRAINING
+
+## Train actual model
+
+Notes:
+A hybrid recommender will be used since an IBCF recommender on its own does not generate ratings across all business lines.
+
+The hybrid recommender could not be evaluated using the evaluation scheme as the process was taking an extended period of time.
+
+```{r}
+ng_ibcf = Recommender(data = products_rating_matrix, method = "IBCF")
+ng_pop = Recommender(data = products_rating_matrix, method = "POPULAR")
+ng_hyb <- HybridRecommender(ng_ibcf, ng_pop, weights = c(0.9,0.1))
+
+# IBCF is not recommending General Products; hybrid recommender will be used.
+ng_rec_model <- ng_hyb
+```
+
+
+## Extract ratings
+
+### Approach 1
+
+Preferred approach.
+
+```{r eval=FALSE, include=FALSE}
+# Chunk taking too long
+
+ng_recommendations <- 
+  predict(object = ng_rec_model, 
+          newdata = products_rating_matrix, 
+          type = "ratings") %>% 
+  as("data.frame") %>% 
+  rename(ACCOUNT_NO = user,
+         PRODUCT = item)
+
+ng_recommendations
+```
+
+### Approach 2
+
+Using matrices.
+
+```{r}
+ng_ibcf_mat <- 
+  predict(object = ng_ibcf,
+          newdata = products_rating_matrix,
+          type = "ratings") %>% 
+  as("matrix")
+```
+
+
+```{r}
+ng_pop_mat <- 
+  predict(object = ng_pop,
+          newdata = products_rating_matrix,
+          type = "ratings") %>% 
+  as("matrix")
+```
+
+Replace NAs with zero and obtain hybrid matrix.
+
+```{r}
+ng_pop_mat[is.na(ng_pop_mat)]=0
+ng_ibcf_mat[is.na(ng_ibcf_mat)]=0
+
+
+ng_hyb_mat = (ng_ibcf_mat*0.9) + (ng_pop_mat*0.1)
+```
+
+
+```{r}
+ng_hyb_mat[1:2,1:5]
+```
+
+Comparison of results...
+
+```{r}
+predict(object = zw_hyb, 
+        newdata = products_rating_matrix[1:2,], 
+        type = "ratings") %>% 
+  as("data.frame") %>% 
+  filter(item %in% colnames(products_rating_matrix)[1:5])
+```
+
+### Ratings
+
+```{r}
+ng_recommendations <-
+ng_hyb_mat %>% 
+  as.data.frame() %>% 
+  rownames_to_column("ACCOUNT_NO") %>%
+  pivot_longer(cols = -ACCOUNT_NO,
+               names_to = "PRODUCT",
+               values_to = "rating") %>% 
+  filter(rating != 0)
+
+ng_recommendations
+```
+
+## Add business lines
+
+Add product business lines to ratings.
+
+```{r}
+product_businesslines <-
+readRDS(file = "../../../Data Prep/NG/04. Extract additional customer details/outputs/product_businesslines.rds")
+
+product_businesslines
+```
+
+```{r}
+ng_recommendations_proc <-
+ng_recommendations %>%
+  left_join(product_businesslines, by = "PRODUCT")
+
+ng_recommendations_proc
+```
+
+
+## Add max rating, arrange
+
+* Add maximum product rating per customer
+* Sort by max rating and rating per customer
+* Group data by customer and business line
+* Limit to top 5 recommendations per customer per business line
+
+```{r}
+ng_recommendations_df <-
+ng_recommendations_proc %>% 
+  group_by(ACCOUNT_NO) %>% 
+  mutate(max_rating = max(rating)) %>% 
+  arrange(desc(max_rating),
+          desc(rating), .by_group = TRUE) %>% 
+  ungroup() %>%
+  group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
+  slice(1:5)
+
+ng_recommendations_df
+```
+
+## Add product values
+
+```{r}
+product_values <-
+readRDS(file = "../../../Data Prep/NG/04. Extract additional customer details/outputs/product_values.rds")
+
+product_values
+```
+
+```{r}
+ng_recommendations_df_proc <-
+ng_recommendations_df %>% 
+  left_join(product_values, by = c("PRODUCT"="PRODUCT")) %>% 
+  select(-accounts)
+
+ng_recommendations_df_proc
+```
+
+
+## Add customer details & grouping
+
+Merge ratings with customer details.
+
+```{r}
+customer_details_final <-
+readRDS(file = "../../../Data Prep/NG/04. Extract additional customer details/outputs/customer_details_final.rds") %>% 
+  ungroup()
+
+customer_details_final
+```
+
+
+```{r}
+table_order <- c("ACCOUNT_NO", "PRODUCT", "BUSINESS_LINE", "rating", "max_rating", "ownership", "intermediated", "product_value", "customer_details")
+
+ng_recommendations_detailed <-
+ng_recommendations_df_proc %>% 
+  left_join(customer_details_final, by = "ACCOUNT_NO") %>% 
+  relocate(BUSINESS_LINE, .after = PRODUCT) %>% 
+  group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
+  select(all_of(table_order))
+
+ng_recommendations_detailed
+```
+
+# CREATE DATABASE
+
+Create sqlite3 database to hold and query records. One country, one database, many tables.
+
+Ref: https://www.youtube.com/watch?v=wXEZZ2JT3-k
+
+## Database Connection
+
+```{r}
+ng_sqlite_path <- "../../../App/uap_cross_sell/db/ng_cs.db"
+con_ng <- dbConnect(drv = SQLite(), ng_sqlite_path)
+```
+
+
+```{r}
+dbListTables(conn = con_ng)
+```
+
+## Database tables
+
+Create database tables of required data.
+
+### Detailed recommendations
+
+```{r}
+copy_to(dest = con_ng, 
+        df = ng_recommendations_detailed, 
+        name = "recommendations_detailed",
+        overwrite = TRUE, 
+        temporary = FALSE)
+```
+
+Compare the two tables...
+
+```{r}
+dim(ng_recommendations_detailed)
+
+tbl(src = con_ng, "recommendations_detailed") %>% 
+  collect() %>% 
+  dim()
+```
+
+
+### Product business lines
+
+```{r}
+copy_to(dest = con_ng, 
+        df = product_businesslines, 
+        name = "product_businesslines", 
+        overwrite = TRUE, 
+        temporary = FALSE)
+```
+
+
+### Product values
+
+```{r}
+copy_to(dest = con_ng, 
+        df = product_values, 
+        name = "product_values", 
+        overwrite = TRUE,
+        temporary = FALSE)
+```
+
+
+## Confirm tables
+
+```{r}
+dbListTables(conn = con_ng)
+```
+
+
+```{r}
+tbl(src = con_ng, "recommendations_detailed")
+```
+
+
+```{r eval=FALSE, include=FALSE}
+# Not required
+q <- "UPDATE product_values SET product_value = 99999, accounts = 99999"
+
+DBI::dbSendQuery(conn = con_zw, statement = q)
+```
+
+
+# PREDICTIONS
+
+## Scenario 1
+
+Where you have a customer account number and want to 3 products per business line.
+
+```{r}
+#sample_cust_num <- paste0(rownames(products_rating_matrix)[1:2], collapse =",")
+#records <- strsplit(x = sample_cust_num, split = ",")[[1]]
+
+records <- sample(x = rownames(products_rating_matrix),
+                  size = 2)
+
+records
+```
+
+### Predict
+
+```{r}
+predict(object = ng_rec_model, 
+        newdata = products_rating_matrix[records,], 
+        type = "ratings") %>% 
+  as("data.frame") %>% 
+  left_join(product_businesslines, by = c("item"="PRODUCT")) %>% 
+  group_by(user, BUSINESS_LINE) %>% 
+  arrange(desc(rating)) %>% 
+  slice(1:3)
+```
+
+### Dataframe
+
+```{r}
+ng_recommendations_detailed %>% 
+  filter(ACCOUNT_NO %in% records) %>% 
+  slice(1:3)
+```
+
+### Database
+
+Database replication of the above results.
+
+```{r}
+tbl(src = con_ng, "recommendations_detailed") %>%
+  filter(ACCOUNT_NO %in% records) %>%
+  group_by(ACCOUNT_NO, BUSINESS_LINE) %>%
+  collect() %>% 
+  slice(1:3)
+```
+
+## Scenario 2
+
+You want to sort all customers across the group according to who's most likely to make a purchase and return 3 recommendations per business line.
+
+Due to performance challenges, only the top 1000 records will be displayed while remaining dataset can be availed as a link for downloading.
+
+We allow the end-user get the top n recommended customers based on this criteria:
+* Intermediated - Yes/No
+* Ownership - business line that owns the customer
+* Product value - a range
+* Rank e.g. 1-10
+
+### Dataframe
+
+```{r}
+ng_recommendations_detailed %>% 
+  ungroup() %>% 
+  filter(intermediated=="No") %>% 
+  count(ownership)
+```
+
+
+```{r}
+ng_recommendations_detailed %>% 
+  filter(intermediated=="No") %>% 
+  filter(ownership=="General") %>% 
+  filter(product_value>=50000) %>% 
+  filter(product_value<=200000) %>% 
+  slice(1:3)
+ #head(1000)
+```
+
+### Database
+
+```{r}
+tbl(src = con_ng, "recommendations_detailed") %>%
+  group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
+  filter(intermediated=="No") %>% 
+  filter(ownership=="General") %>% 
+  filter(product_value >= 50000) %>% 
+  filter(product_value <= 200000) %>% 
+  collect() %>% 
+  slice(1:3)
+  #head(1000)
+```
+
+
+## Scenario 3
+
+Include additional products on top of what one has purchased and return 3 recommendations per business line.
+
+### Procedure
+
+Capture user selections. One product from each business line.
+
+```{r}
+user_choices <-
+product_businesslines %>%
+  group_by(BUSINESS_LINE) %>%
+  slice_sample(n = 1) %>%
+  pull(PRODUCT)
+
+user_choices
+```
+
+Identify missing product names
+
+```{r}
+not_user_choices <- colnames(products_rating_matrix)[!colnames(products_rating_matrix) %in% user_choices]
+
+length(not_user_choices)
+```
+
+Convert to dataframe.
+
+```{r}
+choices <- tibble(choice = 
+rep(x = c(1,0), 
+    times = c(length(user_choices), 
+              length(not_user_choices))
+    ))
+
+user_choices_df <-
+choices %>% 
+  mutate(user_choices = c(user_choices, not_user_choices))
+
+user_choices_df
+```
+
+
+```{r}
+user_choices_df <- 
+pivot_wider(data = user_choices_df,
+            names_from = user_choices, 
+            values_from = choice)
+
+user_choices_df
+```
+
+Convert to binary rating matrix.
+
+```{r}
+user_choices_mat <- as.matrix(user_choices_df)
+
+colnames(user_choices_mat)[1:10]
+
+user_choices_ratmat <- as(user_choices_mat,"binaryRatingMatrix")
+
+class(user_choices_ratmat)
+```
+
+Recommend products.
+
+```{r}
+user_choice_recommendations <- 
+  predict(object = ng_rec_model, 
+          newdata = user_choices_ratmat, 
+          type="ratings")
+```
+
+
+```{r}
+as(user_choice_recommendations, "data.frame") %>% 
+  rename(PRODUCT = item) %>% 
+  left_join(product_businesslines, by = "PRODUCT") %>% 
+  left_join(product_values, by = "PRODUCT") %>% 
+  relocate(BUSINESS_LINE, .after = PRODUCT) %>% 
+  group_by(BUSINESS_LINE) %>% 
+  arrange(desc(rating), .by_group = TRUE) %>%
+  select(-accounts) %>% 
+  slice(1:3)
+```
+
+### User-defined function
+
+Convert to a user function
+
+```{r}
+predict_on_choices <- function(user_choices, recomm_limit){
+  
+  #Products not selected
+  not_user_choices <- colnames(products_rating_matrix)[!colnames(products_rating_matrix) %in% user_choices]
+  
+  #Convert to a table
+  choices <- 
+    tibble(choice = rep(x = c(1,0), 
+                        times = c(length(user_choices), 
+                                  length(not_user_choices))
+    ))
+
+user_choices_df <-
+choices %>% 
+  mutate(user_choices = c(user_choices, not_user_choices))
+  
+ #Convert to wide format
+user_choices_df <- 
+pivot_wider(data = user_choices_df,
+            names_from = user_choices, 
+            values_from = choice)
+
+ #Convert to binaryRatingMatrix
+user_choices_mat <- as.matrix(user_choices_df)
+user_choices_ratmat <- as(user_choices_mat,"binaryRatingMatrix")
+
+ #Predict using model
+user_choice_recommendations <- 
+  predict(object = ng_rec_model, 
+          newdata = user_choices_ratmat, 
+          type="ratings")
+
+ #Convert prediction to dataframe
+user_choice_recommendations_df <-
+as(user_choice_recommendations, "data.frame") %>% 
+  rename(PRODUCT = item) %>%
+  left_join(product_businesslines, by = "PRODUCT") %>% 
+  left_join(product_values, by = "PRODUCT") %>% 
+  relocate(BUSINESS_LINE, .after = PRODUCT) %>% 
+  group_by(BUSINESS_LINE) %>% 
+  arrange(desc(rating), .by_group = TRUE) %>% 
+  slice(1:recomm_limit) %>% 
+  select(-accounts)
+
+return(user_choice_recommendations_df)
+}
+```
+
+
+```{r}
+predict_on_choices(user_choices = user_choices,
+                   recomm_limit = 3)
+```
+
+## Scenario 4
+
+A table of the most popular products.
+
+Comment: If you examine Account Number vs Products for Health vs Asset Mgt, Asset Mgt has 54K records, while Health Insurance has 18K records.
+
+### Dataframe
+
+Get product name and sell date.
+
+```{r}
+popular_products <-
+as(products_rating_matrix, "data.frame") %>% 
+  rename(PRODUCT = item) %>% 
+  count(PRODUCT) %>% 
+  left_join(product_businesslines, by = "PRODUCT") %>% 
+  relocate(BUSINESS_LINE, .after = PRODUCT) %>%
+  group_by(BUSINESS_LINE) %>% 
+  arrange(desc(n), .by_group = TRUE)
+
+popular_products %>% 
+  slice(1:3)
+```
+
+Put the results in their own table in the database
+
+```{r}
+copy_to(dest = con_ng, df = popular_products, overwrite = TRUE, temporary = FALSE)
+
+dbListTables(conn = con_ng)
+```
+
+### Database
+
+Replicate the above results in SQL
+
+```{r}
+tbl(src = con_ng, "popular_products") %>%
+  group_by(BUSINESS_LINE) %>% 
+  collect() %>% 
+  slice(1:3)
+```
+
+## Scenario 5
+
+Ref: https://trumpexcel.com/dependent-drop-down-list-in-excel/
+
+### Product names
+
+```{r}
+#dir.create("../outputs")
+
+tibble(PRODUCTS = colnames(products_rating_matrix)) %>%
+  write_csv("../outputs/valid_product_names.csv")
+```
+
+
+```{r}
+acc_nums_upload <- 
+  readxl::read_excel(
+    path = "../../../App/uap_cross_sell/www/files/cs_upload_template.xlsx",
+    sheet = "customer_acc") %>% 
+  distinct(ACCOUNT_NO) %>% 
+  mutate(ACCOUNT_NO = as.character(ACCOUNT_NO)) %>% 
+  pull(ACCOUNT_NO)
+
+cust_prods_upload <- 
+  readxl::read_excel(
+    path = "../../../App/uap_cross_sell/www/files/cs_upload_template.xlsx",
+    sheet = "customer_prod") %>% 
+  distinct(PRODUCT) %>% 
+  pull(PRODUCT)
+
+acc_nums_upload
+cust_prods_upload
+```
+
+### Customer numbers
+
+Recommendations for customer numbers provided.
+
+```{r}
+ng_recommendations_detailed %>% 
+  filter(ACCOUNT_NO %in% acc_nums_upload) %>% 
+  arrange(desc(max_rating),
+          desc(rating), 
+          .by_group = TRUE) %>% 
+  slice(1:3)
+```
+
+Replicate the above results in SQL
+
+```{r}
+tbl(src = con_ng, "recommendations_detailed") %>%
+  group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
+  filter(ACCOUNT_NO %in% acc_nums_upload) %>% 
+  collect() %>% 
+  slice(1:3)
+```
+
+### Customer products
+
+Recommendations on product list provided.
+
+```{r}
+predict_on_choices(user_choices = cust_prods_upload, recomm_limit = 3)
+```
+
+
+# LIMITATIONS
+
+1. Product holding is per customer is 1 implying there is no cross-selling happening. This makes it harder to identify cross-selling trends.
+2. Assumption: 1 account number, 1 customer.
+
+
+# EXPORTS
+
+```{r}
+# Project image
+save.image(file = "../outputs/03June_Models.RData")
+#load(file = "../outputs/16May_Models.RData")
+
+# Ojects for deployment
+saveRDS(object = ng_rec_model, 
+        file = "../../../App/uap_cross_sell/objects/models/Nigeria.rds")
+
+saveRDS(object = ng_recommendations_detailed,
+        file = "../outputs/ng_recommendations_detailed.rds")
+```
+
+
+
