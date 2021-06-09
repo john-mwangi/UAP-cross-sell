@@ -20,62 +20,48 @@ library(tidyverse)
 # Import Data
 
 ```{r}
-asset_product_holding <- readRDS(file = "../../01. Determine product holding/outputs/objects/asset_product_holding.rds") %>% 
-  rename(ACCOUNT_NO = ACCOUNT_NUMBER)
+asset_product_holding <- readRDS(file = "../../01. Determine product holding/outputs/objects/asset_product_holding.rds")
 
-life_product_holding <- readRDS(file = "../../01. Determine product holding/outputs/objects/life_product_holding.rds") %>% 
-  rename(ACCOUNT_NO = CUSTOMER_NUMBER)
+gi_product_holding <- readRDS(file = "../../01. Determine product holding/outputs/objects/gi_product_holding.rds")
 
-gi_product_holding <- readRDS(file = "../../01. Determine product holding/outputs/objects/gi_product_holding.rds") %>% 
-  rename(ACCOUNT_NO = CUSTOMER_NO,
-         PRODUCT = DESCRIPTION)
+life_product_holding <- readRDS(file = "../../01. Determine product holding/outputs/objects/life_product_holding.rds")
 
-lending_product_holding <- readRDS("../../01. Determine product holding/outputs/objects/lending_product_holding.rds") %>% 
-  rename(ACCOUNT_NO = account_no,
-         PRODUCT = product)
+lending_product_holding <- readRDS("../../01. Determine product holding/outputs/objects/lending_product_holding.rds")
 ```
 
 # Merge the tables
+
+Ensure customer-product combination is unique across the subsidiary.
 
 ```{r}
 products_df_raw <-
 rbind(asset_product_holding,
       life_product_holding,
       gi_product_holding,
-      lending_product_holding)
+      lending_product_holding) %>% 
+  distinct(UNIQUE_ID, PRODUCT, .keep_all = TRUE) %>% 
+  select(-n) %>% 
+  count(UNIQUE_ID,PRODUCT)
 
 products_df_raw
+
+unique(products_df_raw$n)
 ```
-
-# Change values to either 0 or 1
-
-```{r}
-products_df_raw %>% 
-  count(n)
-
-products_df_raw <-
-products_df_raw %>% 
-  distinct(ACCOUNT_NO, PRODUCT) %>% 
-  count(ACCOUNT_NO, PRODUCT)
-
-products_df_raw
-```
-
 
 # Overall product holding
 
-On average, people purchase just one product.
+There are 184K customers. On average, people purchase just one product.
 
 ```{r}
 products_df_raw %>% 
-  count(ACCOUNT_NO) %>% 
+  count(UNIQUE_ID) %>% 
   summary()
 ```
 
 ```{r}
 purchase_dist <-
 products_df_raw %>% 
-  count(ACCOUNT_NO) %>% 
+  count(UNIQUE_ID) %>% 
   mutate(n = pmin(2, n)) %>% 
   ggplot(aes(n))+
   geom_histogram(binwidth = 0.5)+
@@ -104,30 +90,18 @@ products_df_raw %>%
               values_fill = 0)
 
 dim(products_df)
-head(products_df)
+products_df
 ```
-
-
-# Missing account numbers
-
-```{r}
-setdiff(x = asset_product_holding$ACCOUNT_NO, 
-        y = products_df$ACCOUNT_NO)
-
-setdiff(x = life_product_holding$ACCOUNT_NO, 
-        y = products_df$ACCOUNT_NO)
-```
-
 
 # Convert to matrix
 
 ```{r}
 products_matrix <-
 products_df %>% 
-  select(-ACCOUNT_NO) %>% 
+  select(-UNIQUE_ID) %>% 
   as.matrix()
 
-rownames(products_matrix) <- products_df %>% pull(ACCOUNT_NO)
+rownames(products_matrix) <- products_df %>% pull(UNIQUE_ID)
 ```
 
 # Check matrix
@@ -163,10 +137,10 @@ dim(products_rating_matrix)
 
 It should be indicated on the app that Account Number is:
 * Asset Mgt: ACCOUNT_NUMBER
-* Life Ins: CUSTOMER_NUMBER
 * General Ins: CUSTOMER_NO
+* Life Ins: ACCOUNT_NUMBER
 * Lending: account_no
-* Banking: CUSTOMER_NUMBER
+
 
 # Export
 
@@ -174,7 +148,7 @@ It should be indicated on the app that Account Number is:
 saveRDS(object = products_rating_matrix, 
         file = "../outputs/products_rating_matrix.rds")
 
-save.image("../outputs/27May_RatingMatrix.RData")
+save.image("../outputs/09June_RatingMatrix.RData")
 #load("./05May_RatingMatrix.RData")
 ```
 
