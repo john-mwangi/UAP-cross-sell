@@ -1,0 +1,140 @@
+---
+title: "Product holding"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+UAP-OM recommends AES 256 bit, RSA 256 bit encryption. We will be encrypting using RSA 2048 bit protection. 
+
+```{r message=FALSE, warning=FALSE}
+rm(list = ls())
+
+library(encryptr)
+library(digest)
+library(openssl)
+library(tidyverse)
+```
+
+
+```{r}
+test <- tibble(data = c("one","two","one"))
+```
+
+# Encryption
+
+## RSA
+
+* PRIVATE KEY: uap_om_rsa
+* PUBLIC KEY: uap_om_rsa.pub
+
+```{r}
+test %>% 
+ encryptr::encrypt(data, public_key_path = "./uap_om_rsa.pub") %>% 
+  bind_cols(test)
+```
+
+## AES
+
+```{r}
+passphrase <- charToRaw("This is super secret")
+key <- sha256(passphrase)
+x1 <- serialize(test$data[1], NULL)
+x2 <- serialize(test$data[2], NULL)
+
+openssl::aes_cbc_encrypt(data = x1, key = key, iv = NULL)
+openssl::aes_cbc_encrypt(data = x2, key = key, iv = NULL)
+```
+
+# Hashing
+
+```{r}
+digest(object = test$data[1], algo = "sha256", serialize = FALSE)
+
+digest(object = test$data[2], algo = "sha256", serialize = FALSE)
+
+digest(object = test$data[3], algo = "sha256", serialize = FALSE)
+```
+
+```{r}
+test %>% 
+  mutate(sha = map_chr(.x = data, 
+                       .f = ~digest(object = .,
+                                    algo = "sha256",
+                                    serialize = FALSE)))
+```
+
+# National ID
+
+Checking if customers can be identified using the National ID.
+
+```{r}
+gi_customers_raw <-
+read_csv(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_general_insurance.csv")
+
+asset_customers_raw <-
+read.csv(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_investment.csv", 
+         sep = ";", 
+         na.strings = c(""," "))
+
+lending_customers_raw <-
+read_csv(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_lending.csv")
+
+life_customers_raw <-
+read.csv(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_life_insurance.oipa.csv",
+         sep = ";",
+         na.strings = c(""," "))
+```
+
+
+National ID cannot be used as a consistent unique identifier across the business since it is not well populated for GI and Asset.
+
+Its use can be limited to Lending and Life Insurance.
+
+```{r}
+gi_customers_raw %>% 
+  summarise(nulls = sum(is.na(ID_NUMBER)),
+            records = nrow(.)) %>% 
+  mutate(prop = nulls/records)
+
+
+asset_customers_raw %>% 
+  summarise(nulls = sum(is.na(NATIONAL_ID)),
+            records = nrow(.)) %>% 
+  mutate(prop = nulls/records)
+
+
+lending_customers_raw %>% 
+  summarise(nulls = sum(is.na(national_id)),
+            records = nrow(.)) %>% 
+  mutate(prop = nulls/records)
+
+life_customers_raw %>% 
+  summarise(nulls = sum(is.na(NATIONAL_ID)),
+            records = nrow(.)) %>% 
+  mutate(prop = nulls/records)
+```
+
+Customer Number in GI is the same as Account Number in Asset Mgt - which is what we already had. For these two business lines, the most appropriate unique identifier is the Customer/Account Number.
+
+```{r}
+length(unique(gi_customers_raw$CUSTOMER_NO))
+length(unique(asset_customers_raw$ACCOUNT_NUMBER))
+
+length(intersect(x = gi_customers_raw$CUSTOMER_NO,
+                 y = asset_customers_raw$ACCOUNT_NUMBER))
+
+intersect(x = gi_customers_raw$CUSTOMER_NO,
+          y = asset_customers_raw$ACCOUNT_NUMBER)[60:70]
+```
+
+Do the account numbers in Lending and Life Insurance match? For these two business lines, the most appropriate unique customer identifier is the National ID.
+
+```{r}
+length(intersect(x = lending_customers_raw$loan_account_no,
+                 y = life_customers_raw$CUSTOMER_NUMBER))
+```
+
+
