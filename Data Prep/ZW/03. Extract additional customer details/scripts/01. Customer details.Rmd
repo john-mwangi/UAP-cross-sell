@@ -17,6 +17,7 @@ library(glue)
 library(data.table)
 library(dtplyr)
 library(readxl)
+library(digest)
 library(tidyverse)
 ```
 
@@ -42,8 +43,8 @@ asset_customers_raw <- read.csv(
   sep = ";", 
   na.strings = c(""," ")) %>% 
   filter(ACCOUNT_NUMBER > 10000) %>% 
-  select(ACCOUNT_NO = ACCOUNT_NUMBER, AGENT_CODE) %>% 
-  mutate(ACCOUNT_NO = as.character(ACCOUNT_NO)) %>% 
+  select(UNIQUE_ID = ACCOUNT_NUMBER, AGENT_CODE) %>% 
+  mutate(UNIQUE_ID = as.character(UNIQUE_ID)) %>% 
   mutate(intermediated = if_else(condition = is.na(AGENT_CODE), 
                                  true = "No", 
                                  false = "Yes"))
@@ -51,32 +52,14 @@ asset_customers_raw <- read.csv(
 asset_customers_raw
 ```
 
-## Life Insurance
-
-`CUSTOMER_NUMBER` is the unique customer identifier.
-
-```{r}
-life_customers_raw <-
-read.csv(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_life_insurance.oipa.csv",
-         sep = ";",
-         na.strings = c("," )) %>% 
-  filter(str_length(CUSTOMER_NUMBER) > 0) %>% 
-  select(ACCOUNT_NO = CUSTOMER_NUMBER, AGENT_CODE) %>% 
-  mutate(intermediated = if_else(condition = is.na(AGENT_CODE), 
-                                 true = "No", 
-                                 false = "Yes"))
-
-life_customers_raw
-```
-
 ## General Insurance
 
-`CUSTOMER_NO` is the customer identifier.
+`CUSTOMER_NO` is the unique customer identifier.
 
 ```{r}
 gi_customers_raw <-
 read.csv(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_general_insurance.csv") %>% 
-  select(ACCOUNT_NO = CUSTOMER_NO,AGENT_CODE) %>% 
+  select(UNIQUE_ID = CUSTOMER_NO,AGENT_CODE) %>% 
   mutate(intermediated = if_else(condition = is.na(AGENT_CODE), 
                                  true = "No", 
                                  false = "Yes"))
@@ -84,43 +67,47 @@ read.csv(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/c
 gi_customers_raw
 ```
 
+## Life Insurance
+
+`NATIONAL_ID` is the unique customer identifier.
+
+```{r}
+life_customers_raw <-
+read.csv(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_life_insurance.oipa.csv",
+         sep = ";",
+         na.strings = c("," )) %>% 
+  filter(str_length(CUSTOMER_NUMBER) > 0) %>% 
+  filter(!is.na(ACCOUNT_NUMBER)) %>% 
+  filter(!is.na(NATIONAL_ID)) %>% 
+  mutate(UNIQUE_ID = map_chr(.x = NATIONAL_ID,
+                             .f = ~digest(object = .,
+                                          algo = "sha256",
+                                          serialize = FALSE))) %>% 
+  select(UNIQUE_ID, AGENT_CODE) %>% 
+  mutate(intermediated = if_else(condition = is.na(AGENT_CODE), 
+                                 true = "No", 
+                                 false = "Yes"))
+
+life_customers_raw
+```
+
 ## Lending
 
-`account_no` is the customer identifier.
+`national_id` is the customer identifier.
 
 ```{r}
 lending_customers_raw <-
 read_csv(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_lending.csv") %>% 
-  select(ACCOUNT_NO = account_no) %>% 
+  mutate(UNIQUE_ID = map_chr(.x = national_id,
+                             .f = ~digest(object = .,
+                                          algo = "sha256",
+                                          serialize = FALSE))) %>% 
+  select(UNIQUE_ID) %>%
   mutate(AGENT_CODE = NA,
          intermediated = "No")
 
 lending_customers_raw
 ```
-
-## Banking
-
-Banking customers do not have agents.
-
-```{r}
-fread(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_t24_banking.csv") %>% 
-  filter(!is.na(AGENT_CODE))
-
-fread(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_postilion_banking.csv") %>% 
-  filter(!is.na(AGENT_CODE))
-```
-
-
-```{r}
-banking_customers_raw <-
-readRDS(file = "../../01. Determine product holding/outputs/objects/banking_product_holding.rds") %>% 
-  distinct(CUSTOMER_NUMBER) %>% 
-  mutate(AGENT_CODE = NA,
-         intermediated = "No")
-
-banking_customers_raw
-```
-
 
 ## Customer agents
 
@@ -130,7 +117,7 @@ rbind(asset_customers_raw,
       life_customers_raw,
       gi_customers_raw,
       lending_customers_raw) %>% 
-  distinct(ACCOUNT_NO, .keep_all = TRUE)
+  distinct(UNIQUE_ID, .keep_all = TRUE)
 
 customer_agents
 ```
@@ -155,7 +142,7 @@ product_count <-
 as(products_rating_matrix, "data.frame") %>% 
   select(user, item) %>% 
   count(user, name = "product_count") %>% 
-  rename(ACCOUNT_NO = user)
+  rename(UNIQUE_ID = user)
 
 product_count
 ```
@@ -171,7 +158,8 @@ as(products_rating_matrix, "data.frame") %>%
   group_by(user) %>% 
   mutate(products = paste0(item, collapse = ", ")) %>% 
   distinct(user, .keep_all = TRUE) %>% 
-  select(ACCOUNT_NO = user, products)
+  select(UNIQUE_ID = user, products) %>% 
+  ungroup()
 
 customer_products
 ```
@@ -186,20 +174,19 @@ readRDS(file = "../../01. Determine product holding/outputs/objects/asset_produc
   distinct(PRODUCT) %>%
   mutate(BUSINESS_LINE = "Asset")
 
-life_products <-
-readRDS(file = "../../01. Determine product holding/outputs/objects/life_product_holding.rds") %>% 
-  distinct(PRODUCT) %>%
-  mutate(BUSINESS_LINE = "Life")
-
 gi_products <-
 readRDS(file = "../../01. Determine product holding/outputs/objects/gi_product_holding.rds") %>% 
   select(PRODUCT = DESCRIPTION) %>% 
   distinct(PRODUCT) %>%
   mutate(BUSINESS_LINE = "General")
 
+life_products <-
+readRDS(file = "../../01. Determine product holding/outputs/objects/life_product_holding.rds") %>%
+  distinct(PRODUCT) %>%
+  mutate(BUSINESS_LINE = "Life")
+
 lending_products <-
-readRDS(file = "../../01. Determine product holding/outputs/objects/lending_product_holding.rds") %>% 
-  select(PRODUCT = product) %>% 
+readRDS(file = "../../01. Determine product holding/outputs/objects/lending_product_holding.rds") %>%
   distinct(PRODUCT) %>%
   mutate(BUSINESS_LINE = "Lending")
 ```
@@ -219,12 +206,13 @@ product_businesslines
 ```{r}
 customer_ownership <-
 as(products_rating_matrix, "data.frame") %>% 
-  select(ACCOUNT_NO = user, PRODUCT = item) %>% 
+  select(UNIQUE_ID = user, PRODUCT = item) %>% 
   left_join(product_businesslines, by = "PRODUCT") %>% 
-  group_by(ACCOUNT_NO) %>% 
+  group_by(UNIQUE_ID) %>% 
   mutate(ownership = paste0(unique(BUSINESS_LINE), collapse = ", ")) %>% 
-  select(ACCOUNT_NO, ownership) %>% 
-  distinct(ACCOUNT_NO, .keep_all = TRUE)
+  select(UNIQUE_ID, ownership) %>% 
+  distinct(UNIQUE_ID, .keep_all = TRUE) %>% 
+  ungroup()
 
 customer_ownership
 ```
@@ -234,8 +222,8 @@ customer_ownership
 ```{r}
 account_info <-
 customer_products %>% 
-  left_join(product_count, by = "ACCOUNT_NO") %>% 
-  left_join(customer_ownership, by = "ACCOUNT_NO")
+  left_join(product_count, by = "UNIQUE_ID") %>% 
+  left_join(customer_ownership, by = "UNIQUE_ID")
 
 account_info
 ```
@@ -244,9 +232,9 @@ account_info
 
 ```{r}
 account_info %>% 
-  ungroup() %>% 
-  filter(str_detect(ownership,",")) %>% 
   count(ownership)
+
+summary(account_info$product_count)
 ```
 
 # CUSTOMER DETAILS
@@ -261,7 +249,7 @@ gc()
 job::job({
 customer_details_final <-
 account_info %>% 
-  left_join(customer_agents, by = "ACCOUNT_NO") %>% 
+  left_join(customer_agents, by = "UNIQUE_ID") %>% 
   mutate(customer_details = glue("Agent Code:{AGENT_CODE}
                                  Product Holding:{product_count}
                                  Current Products:{products}", 
@@ -290,7 +278,7 @@ saveRDS(object = customer_details_final,
 saveRDS(product_businesslines,"../outputs/product_businesslines.rds")
 
 # Project image
-save.image("../outputs/27May_Customer_details.RData")
+save.image("../outputs/09June_Customer_details.RData")
 ```
 
 

@@ -157,7 +157,6 @@ zw_ibcf_mat <-
           newdata = products_rating_matrix,
           type = "ratings") %>% 
   as("matrix")
-
 ```
 
 
@@ -179,12 +178,19 @@ zw_ibcf_mat[is.na(zw_ibcf_mat)]=0
 zw_hyb_mat = (zw_ibcf_mat*0.9) + (zw_pop_mat*0.1)
 ```
 
+Obtain first 5 product recommendations of first 2 customers.
 
 ```{r}
-zw_hyb_mat[1:2,1:5]
+zw_hyb_mat[1:2,1:5] %>% 
+  as.data.frame() %>%
+  rownames_to_column("user") %>% 
+  pivot_longer(cols = -user,
+               names_to = "item",
+               values_to = "rating") %>% 
+  filter(rating > 0)
 ```
 
-Comparison of results...
+Comparison of results using `predict()`
 
 ```{r}
 predict(object = zw_hyb, 
@@ -200,11 +206,11 @@ predict(object = zw_hyb,
 zw_recommendations <-
 zw_hyb_mat %>% 
   as.data.frame() %>% 
-  rownames_to_column("ACCOUNT_NO") %>%
-  pivot_longer(cols = -ACCOUNT_NO,
+  rownames_to_column("UNIQUE_ID") %>%
+  pivot_longer(cols = -UNIQUE_ID,
                names_to = "PRODUCT",
                values_to = "rating") %>% 
-  filter(rating != 0)
+  filter(rating > 0)
 
 zw_recommendations
 ```
@@ -218,7 +224,7 @@ readRDS(file = "../../../Data Prep/ZW/03. Extract additional customer details/ou
 
 product_businesslines
 
-colnames(products_rating_matrix)
+dim(products_rating_matrix)
 ```
 
 ```{r}
@@ -240,12 +246,12 @@ zw_recommendations_proc
 ```{r}
 zw_recommendations_df <-
 zw_recommendations_proc %>% 
-  group_by(ACCOUNT_NO) %>% 
+  group_by(UNIQUE_ID) %>% 
   mutate(max_rating = max(rating)) %>% 
   arrange(desc(max_rating),
           desc(rating), .by_group = TRUE) %>% 
   ungroup() %>%
-  group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
+  group_by(UNIQUE_ID, BUSINESS_LINE) %>% 
   slice(1:5)
 
 zw_recommendations_df
@@ -263,12 +269,11 @@ product_values
 ```{r}
 zw_recommendations_df_proc <-
 zw_recommendations_df %>% 
-  left_join(product_values, by = c("PRODUCT"="PRODUCT")) %>% 
+  left_join(product_values, by = "PRODUCT") %>% 
   select(-accounts)
 
 zw_recommendations_df_proc
 ```
-
 
 ## Add customer details & grouping
 
@@ -276,25 +281,80 @@ Merge ratings with customer details.
 
 ```{r}
 customer_details_final <-
-readRDS(file = "../../../Data Prep/ZW/03. Extract additional customer details/outputs/customer_details_final.rds") %>% 
-  ungroup()
+readRDS(file = "../../../Data Prep/ZW/03. Extract additional customer details/outputs/customer_details_final.rds")
 
 customer_details_final
 ```
 
 
 ```{r}
-table_order <- c("ACCOUNT_NO", "PRODUCT", "BUSINESS_LINE", "rating", "max_rating", "ownership", "intermediated", "product_value", "customer_details")
+table_order <- c("UNIQUE_ID", "PRODUCT", "BUSINESS_LINE", "rating", "max_rating", "ownership", "intermediated", "product_value", "customer_details")
 
-zw_recommendations_detailed <-
+zw_recommendations_unique_id <-
 zw_recommendations_df_proc %>% 
-  left_join(customer_details_final, by = "ACCOUNT_NO") %>% 
+  left_join(customer_details_final, by = "UNIQUE_ID") %>% 
   relocate(BUSINESS_LINE, .after = PRODUCT) %>% 
-  group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
+  group_by(UNIQUE_ID, BUSINESS_LINE) %>% 
   select(all_of(table_order))
+
+zw_recommendations_unique_id
+```
+
+
+## Add Accounts
+
+Add all Account Numbers associated with each Unique ID
+
+```{r}
+holding_paths <-
+dir(path = "../../../Data Prep/ZW/01. Determine product holding/outputs/objects/",
+    pattern = "holding",
+    all.files = FALSE, 
+    full.names = TRUE, 
+    ignore.case = TRUE)
+
+accounts <-
+holding_paths %>% 
+  map_dfr(.f = readRDS) %>% 
+  select(UNIQUE_ID, ACCOUNT_NO) %>% 
+  distinct(UNIQUE_ID, .keep_all = TRUE)
+
+accounts %>% 
+  filter(str_detect(string = ACCOUNT_NO, pattern = ","))
+```
+
+
+```{r}
+zw_recommendations_detailed <-
+zw_recommendations_unique_id %>% 
+  left_join(accounts, by = "UNIQUE_ID") %>%
+  relocate(ACCOUNT_NO, .after = UNIQUE_ID) %>% 
+  ungroup() %>%
+  group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
+  select(-UNIQUE_ID)
 
 zw_recommendations_detailed
 ```
+## Sense check
+
+Customers with multiple Account Numbers.
+
+```{r}
+accounts %>% 
+  filter(str_detect(string = ACCOUNT_NO, pattern = ",")) %>% 
+  View()
+```
+
+Confirm the above results.
+
+```{r}
+zw_recommendations_detailed %>% 
+  ungroup() %>% 
+  distinct(ACCOUNT_NO) %>% 
+  filter(str_detect(string = ACCOUNT_NO, pattern = ","))
+```
+
+
 
 # CREATE DATABASE
 
@@ -309,20 +369,9 @@ zw_sqlite_path <- "../../../App/uap_cross_sell/db/zw_cs.db"
 con_zw <- dbConnect(drv = SQLite(), zw_sqlite_path)
 ```
 
-```{r}
-#ke_sqlite_path <- "../../../App/uap_cross_sell/db/ke_cs.db"
-#con_ke <- dbConnect(drv = SQLite(), ke_sqlite_path)
-```
-
-```{r}
-#supp_sqlite_path <- "../../../App/uap_cross_sell/db/support.db"
-#con_supp <- dbConnect(drv = SQLite(), supp_sqlite_path)
-```
 
 ```{r}
 dbListTables(conn = con_zw)
-#dbListTables(conn = con_ke)
-#dbListTables(conn = con_supp)
 ```
 
 ## Database tables
@@ -375,9 +424,7 @@ copy_to(dest = con_zw,
 ## Confirm tables
 
 ```{r}
-#dbListTables(conn = con_supp)
 dbListTables(conn = con_zw)
-#dbListTables(conn = con_ke)
 ```
 
 
@@ -400,19 +447,25 @@ DBI::dbSendQuery(conn = con_zw, statement = q)
 
 Where you have a customer account number and want to 3 products per business line.
 
+We select a customer whose unique identifier is:
+* Account Number: 981741
+* Hashed National ID: c11be68eb394fac45c32076299d16a386b771318675d348abcf8d76866f97866
+* Multiple Account Numbers: f09b93a542666d06d857fab8ccc0e2a7ca8697c1b4ae706aa0e717cd49383a66
+
 ```{r}
-sample_cust_num <- paste0(rownames(products_rating_matrix)[1:2], collapse =",")
+#sample_cust_num <- paste0(rownames(products_rating_matrix)[1:2], collapse =",")
+#records <- strsplit(x = sample_cust_num, split = ",")[[1]]
 
-records <- strsplit(x = sample_cust_num, split = ",")[[1]]
-
-records
+unique_ids <- c("981741",
+                "c11be68eb394fac45c32076299d16a386b771318675d348abcf8d76866f97866",
+                "f09b93a542666d06d857fab8ccc0e2a7ca8697c1b4ae706aa0e717cd49383a66")
 ```
 
 ### Predict
 
 ```{r}
 predict(object = zw_rec_model, 
-        newdata = products_rating_matrix[records,], 
+        newdata = products_rating_matrix[unique_ids,], 
         type = "ratings") %>% 
   as("data.frame") %>% 
   left_join(product_businesslines, by = c("item"="PRODUCT")) %>% 
@@ -423,10 +476,14 @@ predict(object = zw_rec_model,
 
 ### Dataframe
 
+Test cases
+* A customer with multiple accounts ["10039100,30022583,41398995,30105335"].
+* Two customers with multiple accounts ["41505354,41505340,41505336].
+* A customer with multiple accounts and another without multiple accounts ["981741"].
+
 ```{r}
 zw_recommendations_detailed %>% 
-  filter(ACCOUNT_NO %in% records) %>% 
-  slice(1:3)
+  filter(str_detect(string = ACCOUNT_NO, pattern = "41398995"))
 ```
 
 ### Database
@@ -753,10 +810,10 @@ predict_on_choices(user_choices = cust_prods_upload, recomm_limit = 3)
 
 ```{r}
 # Project image
-save.image(file = "../outputs/27May_Models.RData")
-#load(file = "../outputs/16May_Models.RData")
+save.image(file = "../outputs/09June_Models.RData")
+#load(file = "../outputs/09June_Models.RData")
 
-# Ojects for deployment
+# Objects for deployment
 saveRDS(object = zw_rec_model, 
         file = "../../../App/uap_cross_sell/objects/models/Zimbabwe.rds")
 

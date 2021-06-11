@@ -1,0 +1,482 @@
+---
+title: "Product-Customer Matching"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# OBJECTIVE
+
+Use the National ID as a unique customer identifier but retain Account Number field for reference. Because the unique customer identifier changes with business lines, the `UNIQUE_ID` column will be used to denote a unique customer identifier consistently across the business lines.
+
+# PACKAGES
+
+```{r message=FALSE, warning=FALSE}
+rm(list = ls())
+
+library(readxl)
+library(data.table)
+library(digest)
+library(tidyverse)
+```
+
+# ASSET MGT
+
+## Data exploration
+
+Locating the unique customer identifier.
+
+```{r}
+asset_products_raw <- read.csv(
+  file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_investment.csv", 
+  sep = ";", 
+  na.strings = c(""," "))
+
+asset_products_raw
+```
+
+```{r}
+#skimr::skim(asset_products_raw)
+```
+
+`ACCOUNT_NUMBER` is the unique customer identifier.
+
+```{r}
+asset_products_raw %>% 
+  filter(!is.na(NATIONAL_ID)) %>% 
+  count(CUSTOMER_NUMBER, sort = TRUE)
+
+asset_products_raw %>% 
+  filter(!is.na(NATIONAL_ID)) %>% 
+  count(ACCOUNT_NUMBER, sort = TRUE)
+
+asset_products_raw %>% 
+  filter(ACCOUNT_NUMBER=="100141")
+
+asset_products_raw %>% 
+  filter(!is.na(NATIONAL_ID)) %>% 
+  distinct(ACCOUNT_NUMBER,PRODUCT) %>% 
+  filter(ACCOUNT_NUMBER=="100141")
+```
+
+## Product holding
+
+The table below returns a table showing products held by each account (1 product, 1 account). n should be 1 in all cases.
+
+```{r}
+asset_product_holding <-
+asset_products_raw %>% 
+  distinct(ACCOUNT_NUMBER,PRODUCT) %>% 
+  mutate(PRODUCT = str_remove(string = PRODUCT, pattern = "^Dom - ")) %>% 
+  add_count(ACCOUNT_NUMBER, PRODUCT) %>% 
+  filter(ACCOUNT_NUMBER >= 100000) %>% 
+  mutate(ACCOUNT_NUMBER = as.character(ACCOUNT_NUMBER)) %>% 
+  mutate(UNIQUE_ID = ACCOUNT_NUMBER) %>% 
+  relocate(UNIQUE_ID, .before = everything()) %>% 
+  rename(ACCOUNT_NO = ACCOUNT_NUMBER)
+
+asset_product_holding
+```
+
+
+## Sense check
+
+Check that a product is mapped once per customer (account number) and no NAs.
+
+```{r}
+asset_product_holding %>% distinct(PRODUCT)
+```
+
+
+```{r}
+asset_product_holding %>% 
+  arrange(desc(n))
+```
+
+Check that there are customers that hold more than one product.
+
+```{r}
+asset_product_holding %>% 
+  count(UNIQUE_ID, sort = TRUE)
+```
+
+Check the number and names of products.
+
+```{r}
+asset_product_holding %>% 
+  count(PRODUCT)
+```
+
+# GENERAL INSURANCE
+
+## Data exploration
+
+`CUSTOMER_NO` in General Ins. is similar to the `ACCOUNT_NUMBER` field in Asset Mgt.
+
+```{r}
+gi_products_raw <-
+read.csv(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_general_insurance.csv") %>% 
+  distinct(CUSTOMER_NO, POLICY_TYPE_CODE)
+
+gi_products_raw
+```
+
+Load product names and products currently not discontinued shared separately by Farai on his One Drive.
+
+```{r}
+gi_prod_names <-
+read_excel(
+  path = "../../../../../../C - Documentation/Data/festus_extraction/ZW/supp_product_details.xlsx", sheet = "GI") %>% 
+  filter(STATUS == "Keep")
+  
+gi_prod_names
+```
+
+## Product holding
+
+```{r}
+gi_product_holding <-
+gi_products_raw %>% 
+  left_join(gi_prod_names, by = c("POLICY_TYPE_CODE"="PROD-TYPE")) %>% 
+  filter(!is.na(DESCRIPTION)) %>% 
+  count(CUSTOMER_NO,DESCRIPTION) %>% 
+  mutate(UNIQUE_ID = CUSTOMER_NO) %>% 
+  relocate(UNIQUE_ID, .before = everything()) %>% 
+  mutate(across(.cols = -n, .fns = as.character)) %>% 
+  rename(ACCOUNT_NO = CUSTOMER_NO,
+         PRODUCT = DESCRIPTION)
+
+gi_product_holding
+```
+
+## Sense check
+
+Check for NA values.
+
+```{r}
+gi_product_holding %>% 
+  filter(is.na(DESCRIPTION))
+```
+
+
+# LIFE INSURANCE
+
+## Data importation
+
+Life insurance products
+
+```{r}
+life_products_raw <- 
+read.csv(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_life_insurance.oipa.csv",
+         sep = ";",
+         na.strings = c(""," ")) %>% 
+  filter(str_length(CUSTOMER_NUMBER) > 0) %>%
+  filter(!is.na(CUSTOMER_NUMBER)) %>% 
+  filter(!is.na(NATIONAL_ID)) %>% 
+  filter(!is.na(ACCOUNT_NUMBER))
+
+life_products_raw
+```
+
+Quick EDA...
+
+```{r}
+skimr::skim(life_products_raw) %>% 
+  as_tibble()
+```
+
+
+`NATIONAL_ID` is the unique identifier but the `ACCOUNT_NUMBER` will be retained for reference.
+
+## Hashing
+
+```{r}
+life_products_hashed <-
+life_products_raw %>% 
+  mutate(UNIQUE_ID = map_chr(.x = NATIONAL_ID,
+                             .f = ~digest(object = .,
+                                          algo = "sha256",
+                                          serialize = FALSE))) %>% 
+  select(UNIQUE_ID,ACCOUNT_NUMBER,PRODUCT)
+
+life_products_hashed
+```
+
+## Product holding
+
+```{r}
+life_product_holding_raw <-
+life_products_hashed %>% 
+  distinct(UNIQUE_ID, PRODUCT) %>% 
+  add_count(UNIQUE_ID, PRODUCT)
+
+life_product_holding_raw
+```
+
+## Add Account Number
+
+We add all the Account Numbers associated with an individual customer.
+
+```{r}
+life_product_holding <-
+life_product_holding_raw %>% 
+  left_join(life_products_hashed %>% 
+              select(UNIQUE_ID, ACCOUNT_NUMBER), 
+            by = "UNIQUE_ID") %>% 
+  group_by(UNIQUE_ID) %>% 
+  mutate(ACCOUNT_NUMBER = paste0(unique(ACCOUNT_NUMBER), 
+                                 collapse = ",")) %>% 
+  distinct(UNIQUE_ID, PRODUCT, .keep_all = TRUE) %>% 
+  ungroup() %>% 
+  rename(ACCOUNT_NO = ACCOUNT_NUMBER)
+
+life_product_holding
+```
+
+
+## Sense check
+
+Check NAs
+
+```{r}
+anyNA(life_product_holding)
+```
+
+Customers with multiple accounts
+
+```{r}
+life_product_holding %>% 
+  filter(str_detect(string = ACCOUNT_NUMBER, pattern = ","))
+```
+
+
+Check each product is mapped once per customer.
+
+```{r}
+unique(life_product_holding$n)
+```
+
+Check that a customer can have many products under them.
+
+```{r}
+life_product_holding %>% 
+  count(UNIQUE_ID, sort = TRUE)
+```
+
+Number of products
+
+```{r}
+life_product_holding %>% 
+  count(PRODUCT)
+```
+
+
+# LENDING
+
+## Data importation
+
+The National ID will be used as the unique customer identifier but the Account Number will be retained for reference.
+
+```{r}
+lending_products_raw <-
+read.csv(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_lending.csv", 
+         na.strings = c(""," ")) %>%
+  filter(!is.na(product)) %>% 
+  filter(!is.na(national_id)) %>% 
+  filter(!is.na(account_no))
+
+lending_products_raw
+```
+
+## Hashing
+
+```{r}
+lending_products_hashed <-
+lending_products_raw %>% 
+  mutate(UNIQUE_ID = map_chr(.x = national_id,
+                             .f = ~digest(object = .,
+                                          algo = "sha256",
+                                          serialize = FALSE))) %>% 
+  select(UNIQUE_ID, account_no,product)
+
+lending_products_hashed
+```
+
+## Fix lending product names
+
+```{r}
+lending_full_names <-
+readxl::read_excel(
+  path = "../../../../../../C - Documentation/Data/festus_extraction/ZW/supp_product_details.xlsx",
+  sheet = "Lending") %>% 
+  janitor::clean_names()
+
+lending_full_names
+```
+
+
+```{r}
+lending_products_hashed_fullnames <-
+lending_products_hashed %>% 
+  left_join(lending_full_names, by = c("product"="abbreviation")) %>% 
+  mutate(product = coalesce(full_name,product)) %>% 
+  select(-full_name)
+
+lending_products_hashed_fullnames
+```
+
+## Product holding
+
+```{r}
+lending_product_holding_raw <-
+lending_products_hashed_fullnames %>% 
+  distinct(UNIQUE_ID, product) %>% 
+  count(UNIQUE_ID, product)
+
+lending_product_holding_raw
+```
+
+## Add Account Numbers
+
+```{r}
+lending_product_holding <-
+lending_product_holding_raw %>% 
+  left_join(lending_products_hashed %>% 
+              select(UNIQUE_ID, ACCOUNT_NO = account_no), 
+            by = "UNIQUE_ID") %>% 
+  group_by(UNIQUE_ID) %>% 
+  mutate(ACCOUNT_NO = paste0(unique(ACCOUNT_NO),
+                             collapse = ",")) %>% 
+  distinct(UNIQUE_ID,product, .keep_all = TRUE) %>% 
+  rename(PRODUCT = product) %>% 
+  ungroup()
+
+lending_product_holding
+```
+
+
+## Sense check
+
+Check for NA values.
+
+```{r}
+anyNA(lending_product_holding)
+```
+
+Customers with multiple accounts
+
+```{r}
+lending_product_holding %>% 
+  filter(str_detect(string = ACCOUNT_NO, pattern = ","))
+```
+
+
+
+# BANKING
+
+## T24
+
+### Data exploration
+
+T24
+
+`CUSTOMER_NUMBER` is the unique customer identifier.
+
+```{r}
+read.csv(
+  file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_t24_banking.csv",
+  sep = ";") %>%
+  filter(CUSTOMER_NUMBER=="5128655")
+```
+ 
+### Product holding
+
+```{r}
+t24_product_holding <-
+fread(
+  file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_t24_banking.csv",
+  sep = ";") %>% 
+  distinct(CUSTOMER_NUMBER, PRODUCT) %>% 
+  count(CUSTOMER_NUMBER, PRODUCT)
+
+t24_product_holding
+```
+
+## Postilion 
+
+### Data exploration
+
+`CUSTOMER_NUMBER` is the unique customer identifier. Product column requires filtering of invalid product numbers.
+
+```{r}
+fread(
+  file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_postilion_banking.csv", 
+  sep = ";") %>% 
+  filter(str_detect(string = PRODUCT, pattern = "[[:alpha:]]")) %>% 
+  count(CUSTOMER_NUMBER, sort = TRUE)
+```
+
+### Product holding
+
+```{r}
+postilion_product_holding <-
+fread(
+  file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_postilion_banking.csv", 
+  sep = ";", na.strings = c(""," ")) %>% 
+  filter(!is.na(CUSTOMER_NUMBER)) %>% 
+  filter(str_detect(string = PRODUCT, pattern = "[[:alpha:]]")) %>% 
+  distinct(CUSTOMER_NUMBER, PRODUCT) %>% 
+  count(CUSTOMER_NUMBER, PRODUCT)
+
+postilion_product_holding
+```
+
+## Banking product holding
+
+```{r}
+banking_product_holding <- 
+  rbind(t24_product_holding, 
+        postilion_product_holding) %>% 
+  distinct(CUSTOMER_NUMBER, PRODUCT, .keep_all = TRUE)
+
+banking_product_holding
+```
+
+## Sense check
+
+Banking has too many products including irrelevant ones.
+
+```{r}
+banking_product_holding %>% 
+  distinct(PRODUCT) %>% 
+  write_csv("../outputs/banking_products.csv")
+```
+
+
+
+# EXPORT
+
+```{r}
+save.image(file = "../outputs/images/09June.RData")
+#load(file = "../outputs/images/09June.RData")
+
+saveRDS(object = asset_product_holding, 
+        file = "../outputs/objects/asset_product_holding.rds")
+saveRDS(object = life_product_holding, 
+        file = "../outputs/objects/life_product_holding.rds")
+saveRDS(object = gi_product_holding,
+        file = "../outputs/objects/gi_product_holding.rds")
+saveRDS(object = lending_product_holding,
+        file = "../outputs/objects/lending_product_holding.rds")
+```
+
+
+
+
+
+
+
+
+
