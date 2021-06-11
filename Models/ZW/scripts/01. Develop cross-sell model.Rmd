@@ -313,21 +313,20 @@ dir(path = "../../../Data Prep/ZW/01. Determine product holding/outputs/objects/
     full.names = TRUE, 
     ignore.case = TRUE)
 
-accounts <-
+uniqueid_accounts <-
 holding_paths %>% 
   map_dfr(.f = readRDS) %>% 
   select(UNIQUE_ID, ACCOUNT_NO) %>% 
   distinct(UNIQUE_ID, .keep_all = TRUE)
 
-accounts %>% 
-  filter(str_detect(string = ACCOUNT_NO, pattern = ","))
+uniqueid_accounts
 ```
 
 
 ```{r}
 zw_recommendations_detailed <-
 zw_recommendations_unique_id %>% 
-  left_join(accounts, by = "UNIQUE_ID") %>%
+  left_join(uniqueid_accounts, by = "UNIQUE_ID") %>%
   relocate(ACCOUNT_NO, .after = UNIQUE_ID) %>% 
   ungroup() %>%
   group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
@@ -337,12 +336,11 @@ zw_recommendations_detailed
 ```
 ## Sense check
 
-Customers with multiple Account Numbers.
+Customers with National IDs having multiple Account Numbers.
 
 ```{r}
-accounts %>% 
-  filter(str_detect(string = ACCOUNT_NO, pattern = ",")) %>% 
-  View()
+uniqueid_accounts %>% 
+  filter(str_detect(string = ACCOUNT_NO, pattern = ","))
 ```
 
 Confirm the above results.
@@ -481,21 +479,243 @@ Test cases
 * Two customers with multiple accounts ["41505354,41505340,41505336].
 * A customer with multiple accounts and another without multiple accounts ["981741"].
 
+#### Approach 1
+
 ```{r}
+# Too slow
 zw_recommendations_detailed %>% 
-  filter(str_detect(string = ACCOUNT_NO, pattern = "41398995"))
+  filter(str_detect(string = ACCOUNT_NO, pattern = "30105335")) %>% 
+  group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
+  slice(1:3)
+```
+
+#### Approach 2
+
+```{r}
+convert_nums_to_pattern <- function(account_num){
+  
+  account_num_vec <- strsplit(x = account_num, split = ",")[[1]]
+  pattern_account_num <- paste0(account_num_vec, collapse = "|")
+  return(pattern_account_num)
+  
+}
+```
+
+Test the function.
+
+```{r}
+input_account_num <- str_remove_all(string = "30105335,41505340,  981741",
+                                     pattern = " ")
+
+convert_nums_to_pattern(account_num = input_account_num)
+```
+Implement the function.
+
+```{r}
+# Significantly faster
+input_account_num <- c("30105335,   41505340,981741")
+input_account_num <- str_remove_all(string = input_account_num, 
+                                    pattern = " ")
+
+cust_unique_ids <-
+uniqueid_accounts %>% 
+  filter(str_detect(string = ACCOUNT_NO, 
+                    pattern = convert_nums_to_pattern(
+                      account_num = input_account_num)
+                    )) %>% 
+  pull(UNIQUE_ID)
+
+
+predict(object = zw_rec_model, 
+        newdata = products_rating_matrix[cust_unique_ids,], 
+        type = "ratings") %>% 
+  as("data.frame") %>% 
+  rename(UNIQUE_ID = user, PRODUCT = item) %>% 
+  left_join(product_businesslines, by = "PRODUCT") %>% 
+  left_join(uniqueid_accounts, by = "UNIQUE_ID") %>% 
+  select(any_of(c("ACCOUNT_NO",table_order))) %>% 
+  select(-UNIQUE_ID) %>% 
+  group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
+  arrange(desc(rating)) %>% 
+  slice(1:3)
 ```
 
 ### Database
 
 Database replication of the above results.
 
+Save `uniqueid_accounts` to database
+
 ```{r}
-tbl(src = con_zw, "recommendations_detailed") %>%
-  filter(ACCOUNT_NO %in% records) %>%
-  group_by(ACCOUNT_NO, BUSINESS_LINE) %>%
-  collect() %>% 
+copy_to(dest = con_zw,
+        df = uniqueid_accounts,
+        name = "uniqueid_accounts",
+        overwrite = TRUE,
+        temporary = FALSE)
+```
+
+#### REGEX
+
+Regex in SQL.
+
+```{r message=FALSE, warning=FALSE}
+# Requires loading a udf from a dll file.
+# NOT USED
+query_stmt <- "SELECT * FROM uniqueid_accounts WHERE ACCOUNT_NO REGEXP '30105335';"
+query_res <- dbSendStatement(conn = con_zw, statement = query_stmt)
+```
+
+#### LIKE
+
+Using LIKE operator.
+
+```{r}
+query_stmt <- "select * from uniqueid_accounts limit 6;"
+query_result <- dbSendStatement(conn = con_zw, statement = query_stmt)
+
+query_stmt1 <- "SELECT * FROM uniqueid_accounts WHERE ACCOUNT_NO like '%30105335%';"
+query_stmt2 <- "SELECT * FROM uniqueid_accounts WHERE ACCOUNT_NO like '%41505340%';"
+query_stmt3 <- "SELECT * FROM uniqueid_accounts WHERE ACCOUNT_NO like '%981741%';"
+
+query_result1 <- dbSendStatement(conn = con_zw, statement = query_stmt1)
+dbFetch(res = query_result1)
+dbClearResult(res = query_result1)
+
+query_result2 <- dbSendStatement(conn = con_zw, statement = query_stmt2)
+dbFetch(res = query_result2)
+dbClearResult(res = query_result2)
+
+query_result3 <- dbSendStatement(conn = con_zw, statement = query_stmt3)
+dbFetch(res = query_result3)
+dbClearResult(res = query_result3)
+```
+
+Applying `glue`
+
+```{r}
+test_acc <- "30105335"
+
+test_stmt <-
+  paste0("SELECT * FROM uniqueid_accounts WHERE ACCOUNT_NO LIKE '%",test_acc,"%'") %>% 
+  SQL()
+
+test_res <- dbSendQuery(conn = con_zw, statement = test_stmt)
+test_tbl <- dbFetch(test_res)
+dbClearResult(res = test_res)
+test_tbl
+```
+
+Adding a `for()` loop
+
+```{r}
+input_account_num <- c("30105335,   41505340,981741")
+input_account_num <- str_remove_all(string = input_account_num, 
+                                    pattern = " ")
+input_account_num <- str_split(string = input_account_num, 
+                               pattern = ",")[[1]]
+
+
+res_tbl <- tibble()
+  
+for(account in seq_along(input_account_num)){
+  
+  query_stmt <-
+  paste0("SELECT * FROM uniqueid_accounts WHERE ACCOUNT_NO LIKE '%",input_account_num[account],"%'") %>% 
+  SQL()
+  
+  query_result <- 
+  dbSendStatement(conn = con_zw, 
+                  statement = query_stmt)
+  
+  res_tbl <- rbind(res_tbl, dbFetch(res = query_result))
+  dbClearResult(res = query_result)
+}
+
+cust_unique_ids <- res_tbl %>% pull(UNIQUE_ID)
+
+cust_unique_ids
+```
+
+#### Predict
+
+```{r}
+predict(object = zw_rec_model, 
+        newdata = products_rating_matrix[cust_unique_ids,], 
+        type = "ratings") %>% 
+  as("data.frame") %>% 
+  rename(UNIQUE_ID = user, PRODUCT = item) %>% 
+  left_join(product_businesslines, by = "PRODUCT") %>% 
+  left_join(uniqueid_accounts, by = "UNIQUE_ID") %>% 
+  left_join(product_values, by = "PRODUCT") %>% 
+  left_join(customer_details_final, by = "UNIQUE_ID") %>% 
+  select(any_of(c("ACCOUNT_NO",table_order))) %>% 
+  select(-UNIQUE_ID) %>% 
+  group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
+  mutate(max_rating = max(rating)) %>% 
+  relocate(max_rating, .after = rating) %>% 
+  arrange(desc(rating)) %>% 
   slice(1:3)
+```
+
+#### User defined function
+
+
+```{r}
+predict_on_accounts <- function(account_num, recomm_limit){
+  
+# Clean input values
+input_account_num <- str_remove_all(string = account_num, 
+                                    pattern = " ")
+input_account_num <- str_split(string = input_account_num, 
+                               pattern = ",")[[1]]
+
+# Retrieve unique identifiers
+res_tbl <- tibble()
+  
+for(account in seq_along(input_account_num)){
+  
+  query_stmt <-
+  paste0("SELECT * FROM uniqueid_accounts WHERE ACCOUNT_NO LIKE '%",input_account_num[account],"%'") %>% 
+  SQL()
+  
+  query_result <- 
+  dbSendStatement(conn = con_zw, 
+                  statement = query_stmt)
+  
+  res_tbl <- rbind(res_tbl, dbFetch(res = query_result))
+  dbClearResult(res = query_result)
+}
+
+cust_unique_ids <- res_tbl %>% pull(UNIQUE_ID)
+
+# Predict & merge
+user_account_recommendations <-
+predict(object = zw_rec_model, 
+        newdata = products_rating_matrix[cust_unique_ids,], 
+        type = "ratings") %>% 
+  as("data.frame") %>% 
+  rename(UNIQUE_ID = user, PRODUCT = item) %>% 
+  left_join(product_businesslines, by = "PRODUCT") %>% 
+  left_join(uniqueid_accounts, by = "UNIQUE_ID") %>% 
+  left_join(product_values, by = "PRODUCT") %>% 
+  left_join(customer_details_final, by = "UNIQUE_ID") %>% 
+  select(any_of(c("ACCOUNT_NO",table_order))) %>% 
+  select(-UNIQUE_ID) %>% 
+  group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
+  mutate(max_rating = max(rating)) %>% 
+  relocate(max_rating, .after = rating) %>% 
+  arrange(desc(rating)) %>% 
+  slice(1:recomm_limit)
+
+return(user_account_recommendations)
+}
+```
+
+Test the function.
+
+```{r}
+predict_on_accounts(account_num = "30105335,   41505340,981741",
+                    recomm_limit = 3)
 ```
 
 
@@ -519,7 +739,6 @@ zw_recommendations_detailed %>%
   filter(intermediated=="No") %>% 
   count(ownership)
 ```
-
 
 ```{r}
 zw_recommendations_detailed %>% 
@@ -770,25 +989,10 @@ cust_prods_upload
 
 ### Customer numbers
 
-Recommendations for customer numbers provided.
+Recommendations for customer numbers provided in SQL.
 
 ```{r}
-zw_recommendations_detailed %>% 
-  filter(ACCOUNT_NO %in% acc_nums_upload) %>% 
-  arrange(desc(max_rating),
-          desc(rating), 
-          .by_group = TRUE) %>% 
-  slice(1:3)
-```
-
-Replicate the above results in SQL
-
-```{r}
-tbl(src = con_zw, "recommendations_detailed") %>%
-  group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
-  filter(ACCOUNT_NO %in% acc_nums_upload) %>% 
-  collect() %>% 
-  slice(1:3)
+predict_on_accounts(account_num = acc_nums_upload, recomm_limit = 3)
 ```
 
 ### Customer products
@@ -802,16 +1006,15 @@ predict_on_choices(user_choices = cust_prods_upload, recomm_limit = 3)
 
 # LIMITATIONS
 
-1. Product holding is per customer is 1 implying there is no cross-selling happening. This makes it harder to identify cross-selling trends.
-2. Assumption: 1 account number, 1 customer.
+* Product holding is per customer is 1 implying there is no cross-selling happening. This makes it harder to identify cross-selling trends.
 
 
 # EXPORTS
 
 ```{r}
 # Project image
-save.image(file = "../outputs/09June_Models.RData")
-#load(file = "../outputs/09June_Models.RData")
+save.image(file = "../outputs/11June_Models.RData")
+#load(file = "../outputs/11June_Models.RData")
 
 # Objects for deployment
 saveRDS(object = zw_rec_model, 
