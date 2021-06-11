@@ -17,50 +17,24 @@ library(tidyverse)
 ```
 
 
-# Import Data
+# Import product holdings
 
 ```{r}
-asset_product_holding <- readRDS(file = "../../01. Determine product holding/outputs/objects/asset_product_holding.rds") %>% 
+life_product_holding <-
+readRDS(file = "../../product_holding/life_product_holding.rds") %>% 
   rename(ACCOUNT_NO = ACCOUNT_NUMBER)
-
-life_product_holding <- readRDS(file = "../../01. Determine product holding/outputs/objects/life_product_holding.rds") %>% 
-  rename(ACCOUNT_NO = CUSTOMER_NUMBER)
-
-gi_product_holding <- readRDS(file = "../../01. Determine product holding/outputs/objects/gi_product_holding.rds") %>% 
-  rename(ACCOUNT_NO = CUSTOMER_NO,
-         PRODUCT = DESCRIPTION)
-
-lending_product_holding <- readRDS("../../01. Determine product holding/outputs/objects/lending_product_holding.rds") %>% 
-  rename(ACCOUNT_NO = account_no,
-         PRODUCT = product)
 ```
 
 # Merge the tables
 
+We merge all the tables.
+
 ```{r}
-products_df_raw <-
-rbind(asset_product_holding,
-      life_product_holding,
-      gi_product_holding,
-      lending_product_holding)
+products_df_raw <- life_product_holding %>% 
+  distinct(ACCOUNT_NO, PRODUCT, .keep_all = TRUE)
 
 products_df_raw
 ```
-
-# Change values to either 0 or 1
-
-```{r}
-products_df_raw %>% 
-  count(n)
-
-products_df_raw <-
-products_df_raw %>% 
-  distinct(ACCOUNT_NO, PRODUCT) %>% 
-  count(ACCOUNT_NO, PRODUCT)
-
-products_df_raw
-```
-
 
 # Overall product holding
 
@@ -108,16 +82,16 @@ head(products_df)
 ```
 
 
-# Missing account numbers
+# Sense checks
 
 ```{r}
-setdiff(x = asset_product_holding$ACCOUNT_NO, 
-        y = products_df$ACCOUNT_NO)
+# Missing Account Numbers
+dim(products_df)
+length(unique(products_df_raw$ACCOUNT_NO))
 
-setdiff(x = life_product_holding$ACCOUNT_NO, 
-        y = products_df$ACCOUNT_NO)
+
+anyNA(products_df)
 ```
-
 
 # Convert to matrix
 
@@ -130,16 +104,6 @@ products_df %>%
 rownames(products_matrix) <- products_df %>% pull(ACCOUNT_NO)
 ```
 
-# Check matrix
-
-Check for NA values in the product names.
-
-```{r}
-products_matrix %>% 
-  colnames() %>% 
-  str_detect(string = ., pattern = "NA") %>% 
-  sum()
-```
 
 ```{r}
 rownames(products_matrix)[1:10]
@@ -161,20 +125,15 @@ dim(products_rating_matrix)
 
 # Notes
 
-It should be indicated on the app that Account Number is:
-* Asset Mgt: ACCOUNT_NUMBER
-* Life Ins: CUSTOMER_NUMBER
-* General Ins: CUSTOMER_NO
-* Lending: account_no
-* Banking: CUSTOMER_NUMBER
+
 
 # Export
 
 ```{r}
 saveRDS(object = products_rating_matrix, 
-        file = "../outputs/products_rating_matrix.rds")
+        file = "../../product_holding/products_rating_matrix.rds")
 
-save.image("../outputs/27May_RatingMatrix.RData")
-#load("./05May_RatingMatrix.RData")
+save.image("../../product_holding/10June_RatingMatrix.RData")
+#load("./10June_RatingMatrix.RData")
 ```
 

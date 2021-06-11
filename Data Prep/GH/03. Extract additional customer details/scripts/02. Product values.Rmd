@@ -12,155 +12,64 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r message=FALSE, warning=FALSE}
 rm(list = ls())
 
+library(glue)
 library(readxl)
 library(lubridate)
 library(tidyverse)
 ```
 
-
-# PRODUCT BUSINESS LINES
-
-```{r}
-product_businesslines <- readRDS("../outputs/product_businesslines.rds")
-
-product_businesslines
-```
-
-
-# ASSET MGT
-
-Tie values in the statements to product names in the customer datasets.
+# LIFE INSURANCE
 
 ## Statements
 
-Transaction types to included:
-* Creation
-
-Purchases are top-ups after Creation.
-
 ```{r}
-asset_statements <-
-read.csv(
-  file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/statement_investment.csv",
-  sep = ";")
-
-asset_statements %>% 
-  filter(AMOUNT > 0) %>% 
-  count(TRANSACTION_TYPE_DETAIL)
+life_statements_raw <-
+read.csv("../../../../../../Ghana/Life/LIFE_TRANSACTION_HISTORY.csv") %>% 
+  select(DATE, CONTRACT_ID, INVESTED_PREMIUM)
 ```
 
-
-## Product values
-
-```{r}
-asset_product_values <-
-asset_statements %>% 
-  mutate(TRANSACTION_DATE = ymd(TRANSACTION_DATE)) %>% 
-  filter(AMOUNT > 0) %>% 
-  filter(TRANSACTION_DATE >= "2018-01-01") %>% 
-  filter(TRANSACTION_TYPE_DETAIL %in% c("Creation","Stock Creation")) %>% 
-  group_by(PRODUCT) %>% 
-  summarise(AMOUNT = mean(AMOUNT),
-            accounts = n())
-
-asset_product_values
-```
-## Fix product names
+Date filter was removed because it resulted in very few products being retained.
 
 ```{r}
-readRDS(file = "../../01. Determine product holding/outputs/objects/asset_product_holding.rds") %>% 
-  distinct(PRODUCT)
+life_statements <- life_statements_raw %>%
+  filter(INVESTED_PREMIUM > 0)
+
+life_statements
 ```
 
+## Products
 
-# LIFE INSURANCE
+Product names with policy number.
+
+```{r}
+life_products <- readRDS("../../product_holding/life_products.rds")
+
+life_products
+```
 
 ## Product values
 
 ```{r}
 life_product_values <-
-read.csv(
-  file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/statement_life_insurance.oipa.csv") %>%
-  filter(PAYMENT_PAID > 0) %>% 
-  mutate(TRANSACTION_DATE = ymd(TRANSACTION_DATE)) %>% 
-  filter(TRANSACTION_DATE >= "2018-01-01") %>% 
-  select(PRODUCT,PAYMENT_PAID,TRANSACTION_TYPE,TRANSACTION_DATE) %>% 
-  group_by(PRODUCT) %>%
-  summarise(product_value = mean(PAYMENT_PAID),
-            accounts = n())
+life_statements %>% 
+  left_join(life_products, by = "CONTRACT_ID") %>% 
+  select(CONTRACT_GROUP_NAME, INVESTED_PREMIUM) %>% 
+  group_by(CONTRACT_GROUP_NAME) %>% 
+  summarise(product_value = mean(INVESTED_PREMIUM),
+            accounts = n()) %>% 
+  filter(!is.na(CONTRACT_GROUP_NAME)) %>% 
+  rename(PRODUCT = CONTRACT_GROUP_NAME)
 
 life_product_values
 ```
 
-# GENERAL INSURANCE
-
-## Statements
-
-```{r}
-gi_prod_vals_raw <-
-read_csv(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/statement_general_insurance.csv") %>% 
-  mutate(TRANSACTION_DATE = ymd(TRANSACTION_DATE)) %>% 
-  filter(TRANSACTION_DATE >= "2018-01-01") %>% 
-  filter(PREMIUM_AMOUNT > 0) %>% 
-  select(POLICY_PRODUCT_TYPE, PREMIUM_AMOUNT, TRANSACTION_TYPE)
-
-gi_prod_vals_raw
-```
-## Product names
-
-```{r}
-gi_product_names <-
-readxl::read_excel(
-  path = "../../../../../../C - Documentation/Data/festus_extraction/ZW/supp_product_details.xlsx",
-  sheet = "GI") %>% 
-  select(`PROD-TYPE`,DESCRIPTION)
-
-gi_product_names
-```
-
-## Product values
-
-```{r}
-gi_product_values <-
-gi_prod_vals_raw %>% 
-  left_join(gi_product_names, by = c("POLICY_PRODUCT_TYPE"="PROD-TYPE")) %>% 
-  select(-POLICY_PRODUCT_TYPE) %>% 
-  rename(PRODUCT = DESCRIPTION) %>% 
-  relocate(PRODUCT, .before = everything()) %>% 
-  group_by(PRODUCT) %>% 
-  summarise(product_value = mean(PREMIUM_AMOUNT),
-            accounts = n())
-
-gi_product_values
-```
-
-
-# LENDING
-
-## Products values
-
-```{r}
-lending_product_values <-
-read_csv(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/statement_lending.csv") %>% 
-  mutate(income = total_repaid - principal) %>% 
-  filter(income > 0) %>% 
-  select(PRODUCT = product_name, income) %>% 
-  group_by(PRODUCT) %>% 
-  summarise(product_value = mean(income),
-            accounts = n())
-
-lending_product_values
-```
 
 # ALL PRODUCTS
 
 ```{r}
-product_values_raw <-
-rbind(life_product_values,
-      gi_product_values,
-      lending_product_values)
+product_values <- life_product_values
 
-product_values_raw
+product_values
 ```
 
 
@@ -169,8 +78,16 @@ product_values_raw
 Check that all products have assigned product values and impute.
 
 ```{r}
+product_businesslines <-
+readRDS(file = "../outputs/product_businesslines.rds")
+
+product_businesslines
+```
+
+
+```{r}
 product_businesslines %>% 
-  left_join(product_values_raw) %>% 
+  left_join(product_values) %>% 
   filter(is.na(product_value))
 ```
 
@@ -178,7 +95,7 @@ product_businesslines %>%
 ```{r}
 product_values <-
 product_businesslines %>% 
-  left_join(product_values_raw, by = "PRODUCT") %>% 
+  left_join(product_values, by = "PRODUCT") %>% 
   group_by(BUSINESS_LINE) %>%
   mutate(product_value = replace_na(product_value, 
                                     mean(product_value, na.rm = TRUE))) %>% 
@@ -195,9 +112,8 @@ product_values
 # EXPORT
 
 ```{r}
-save.image("../outputs/27May_Product_Values.RData")
+save.image("../outputs/10June_Product_Values.RData")
 #load("../outputs/16May_Product_Values.RData")
 
 saveRDS(product_values,"../outputs/product_values.rds")
 ```
-

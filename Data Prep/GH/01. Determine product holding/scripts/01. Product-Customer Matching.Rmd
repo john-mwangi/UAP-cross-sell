@@ -29,12 +29,26 @@ life_products_raw <-
 read_csv(file = "../../../../../../Ghana/Life/POLICY_HEADER.csv") %>% 
   unite(col = PRODUCT, c(CONTRACT_GROUP_NAME), sep = "_") %>% 
   select(ACCOUNT_NUMBER, PRODUCT) %>% 
-  mutate(PRODUCT = str_remove(string = PRODUCT, pattern = "_NA$")) %>% 
+  mutate(PRODUCT = str_remove(string = PRODUCT, pattern = "_NA$")) %>%
+  mutate_at("ACCOUNT_NUMBER", str_replace, "\\(", "") %>%
+  mutate_at("ACCOUNT_NUMBER", str_replace, "\\+", "") %>%
   filter(str_length(ACCOUNT_NUMBER) > 0) %>%
   filter(!is.na(ACCOUNT_NUMBER))
 
 (life_products_raw)
 ```
+
+
+```{r}
+life_products <- 
+  read_csv(file = "../../../../../../Ghana/Life/POLICY_HEADER.csv") %>% 
+    select(ACCOUNT_NUMBER, CONTRACT_GROUP_NAME, AGENT_CONTRACT_ID, CONTRACT_ID) %>%
+    mutate_at("ACCOUNT_NUMBER", str_replace, "\\(", "") %>%
+    mutate_at("ACCOUNT_NUMBER", str_replace, "\\+", "")
+
+life_products
+```
+
 
 `CUSTOMER_NUMBER` is the unique customer identifier.
 
@@ -74,8 +88,15 @@ life_product_holding %>%
 Number of products
 
 ```{r}
-life_product_holding %>% 
-  count(PRODUCT)
+insufficient_life_purchases <-
+life_products_raw %>% 
+  count(PRODUCT) %>% 
+  filter(n<23) %>% 
+  pull(PRODUCT)
+
+life_product_holding <- 
+  life_product_holding %>% 
+    filter(!PRODUCT %in% insufficient_life_purchases)
 ```
 
 
@@ -88,6 +109,11 @@ save.image(file = "./7June.RData")
 
 saveRDS(object = life_product_holding, 
         file = "../../product_holding/life_product_holding.rds")
+
+saveRDS(object = life_products,
+        file = "../../product_holding/life_products.rds")
+
+load("./7June.RData")
 ```
 
 

@@ -1,0 +1,211 @@
+---
+title: "Support tables"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# SUPPORT TABLE
+
+*Additional tables will be appended instead. Refer go to: Update table*
+
+This table will hold information that cuts across all countries. It will be used for dynamically updating UI elements of the tool. 
+
+This table will contain, for each country:
+* Products under each country
+* Ownership of customers
+
+## Packages
+
+```{r message=FALSE, warning=FALSE}
+rm(list = ls())
+
+library(DBI)
+library(tidyverse)
+```
+
+
+## Ownership information
+
+```{r}
+ke_ownership <- readRDS(file = "../../../Data Prep/KE/03. Extract additional customer details/outputs/ke_recommendations_detailed.rds") %>%
+  ungroup() %>%
+  distinct(ownership) %>%
+  pull(ownership)
+
+zw_ownership <- readRDS(file = "../outputs/zw_recommendations_detailed.rds") %>%
+  ungroup() %>%
+  distinct(ownership) %>%
+  pull(ownership)
+
+ug_ownership <- readRDS(file = "../../UG/outputs/ug_recommendations_detailed.rds") %>% 
+  ungroup() %>% 
+  distinct(ownership) %>% 
+  pull(ownership)
+
+ke_ownership
+zw_ownership
+ug_ownership
+```
+
+```{r}
+supp_sqlite_path_ug <- "../../../App/uap_cross_sell/db/support_tayo.db"
+con_supp_ug <- dbConnect(drv = RSQLite::SQLite(), supp_sqlite_path_ug)
+
+ug_ownership <-
+tbl(src = con_supp_ug, "support") %>% 
+  filter(country=="Uganda") %>% 
+  filter(!is.na(ownership)) %>% 
+  pull(ownership)
+
+ug_ownership
+```
+
+
+## Product information
+
+
+```{r}
+ke_products <- readRDS(file = "../../../Data Prep/KE/02. Create rating matrices/outputs/products_rating_matrix.rds") %>%
+  colnames()
+
+zw_products <- readRDS(file = "../../../Data Prep/ZW/02. Create rating matrices/outputs/products_rating_matrix.rds") %>%
+  colnames()
+
+ug_products <- readRDS(file = "../../../Data Prep/UG/02. Create rating matrices/outputs/products_rating_matrix.rds") %>% 
+  colnames()
+
+length(ke_products)
+length(zw_products)
+length(ug_products)
+```
+
+
+```{r}
+support_df <-
+rbind(
+  tibble(
+    country = "Zimbabwe",
+    products = zw_products,
+    ownership = c(zw_ownership,
+                  rep(NA, times = length(zw_products) - length(zw_ownership))
+                  )
+    ),
+  
+  tibble(
+    country = "Kenya",
+    products = ke_products,
+    ownership = c(ke_ownership,
+                  rep(NA, times = length(ke_products) - length(ke_ownership))
+                  )
+    )
+  )
+
+support_df
+```
+
+
+```{r}
+ug_tibble <- tibble(
+    country = "Uganda",
+    products = ug_products,
+    ownership = c(ug_ownership,
+                  rep(NA, times = length(ug_products) - length(ug_ownership))
+                  )
+    )
+
+ug_tibble
+```
+
+
+## Save into db
+
+```{r}
+supp_sqlite_path <- "../../../App/uap_cross_sell/db/support.db"
+con_supp <- dbConnect(drv = RSQLite::SQLite(), supp_sqlite_path)
+```
+
+
+```{r}
+copy_to(dest = con_supp, 
+        df = support_df, 
+        name = "support", 
+        overwrite = TRUE, 
+        temporary = FALSE)
+```
+
+
+# Update table
+
+## db Connection
+
+```{r}
+supp_sqlite_path <- "../../../App/uap_cross_sell/db/support.db"
+
+con_supp <- dbConnect(drv = RSQLite::SQLite(), supp_sqlite_path)
+
+dbListTables(conn = con_supp)
+```
+
+## GH Update
+
+### Product information
+
+```{r}
+gh_products <-
+readRDS(file = "../../../Data Prep/GH/product_holding/products_rating_matrix.rds") %>% 
+  colnames()
+
+gh_products
+```
+
+### Ownership information
+
+```{r}
+gh_ownership <-
+readRDS(file = "../gh_recommendations_detailed.rds") %>% 
+  ungroup() %>% 
+  distinct(ownership) %>% 
+  pull(ownership)
+
+gh_ownership
+```
+
+### Dataframe
+
+```{r}
+gh_tibble <-
+tibble(country = "Ghana",
+       products = gh_products,
+       ownership =c(gh_ownership, 
+                    rep(x = NA, 
+                        times = length(gh_products) - length(gh_ownership))
+                    )
+       )
+
+gh_tibble
+```
+
+## Save to db
+
+```{r}
+dbWriteTable(con = con_supp, "support", gh_tibble, append=TRUE, row.names = FALSE)
+```
+
+
+# Sense check
+
+```{r}
+dbListTables(conn = con_supp)
+
+dim(gh_tibble)
+
+tbl(src = con_supp, "support") %>% 
+  filter(country=="Ghana") %>% 
+  collect() %>% 
+  dim()
+```
+
