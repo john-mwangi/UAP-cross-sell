@@ -8,7 +8,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 
-# SUPPORT TABLE
+# ORIGINAL TABLE
 
 This table will hold information that cuts across all countries. It will be used for dynamically updating UI elements of the tool. 
 
@@ -39,15 +39,10 @@ zw_ownership <- readRDS(file = "../outputs/zw_recommendations_detailed.rds") %>%
   distinct(ownership) %>%
   pull(ownership)
 
-ug_ownership <- readRDS(file = "../../UG/outputs/ug_recommendations_detailed.rds") %>% 
-  ungroup() %>% 
-  distinct(ownership) %>% 
-  pull(ownership)
-
 ke_ownership
 zw_ownership
-ug_ownership
 ```
+
 
 ```{r}
 supp_sqlite_path_ug <- "../../../App/uap_cross_sell/db/support.db"
@@ -65,7 +60,6 @@ ug_ownership
 
 ## Product information
 
-
 ```{r}
 ke_products <- readRDS(file = "../../../Data Prep/KE/02. Create rating matrices/outputs/products_rating_matrix.rds") %>%
   colnames()
@@ -73,14 +67,11 @@ ke_products <- readRDS(file = "../../../Data Prep/KE/02. Create rating matrices/
 zw_products <- readRDS(file = "../../../Data Prep/ZW/02. Create rating matrices/outputs/products_rating_matrix.rds") %>%
   colnames()
 
-ug_products <- readRDS(file = "../../../Data Prep/UG/product_holding/products_rating_matrix.rds") %>% 
-  colnames()
-
 length(ke_products)
 length(zw_products)
-length(ug_products)
 ```
 
+## Tables
 
 ```{r}
 support_df <-
@@ -105,20 +96,6 @@ rbind(
 support_df
 ```
 
-
-```{r}
-ug_tibble <- tibble(
-    country = "Uganda",
-    products = ug_products,
-    ownership = c(ug_ownership,
-                  rep(NA, times = length(ug_products) - length(ug_ownership))
-                  )
-    )
-
-ug_tibble
-```
-
-
 ## Save into db
 
 ```{r}
@@ -135,33 +112,115 @@ copy_to(dest = con_supp,
         temporary = FALSE)
 ```
 
+# UPDATES
 
-
-## Updating support db with UG tibble
+## Remove outdated info
 
 ```{r}
-support_df <- 
-tbl(src = con_supp, "support") %>%
-  filter (country != "Uganda") %>%
+support_df <-
+tbl(src = con_supp, "support") %>% 
+  filter(country != "Zimbabwe") %>% 
   collect()
+
+support_df
 ```
+
+
+## Ownership
+
+Uganda.
 
 ```{r}
-copy_to(dest = con_supp, df=support_df, "support", overwrite = TRUE, temporary = FALSE)
+ug_ownership <- readRDS(file = "../../UG/outputs/ug_recommendations_detailed.rds") %>% 
+  ungroup() %>% 
+  distinct(ownership) %>% 
+  pull(ownership)
 ```
 
+
+Zimbabwe.
+
+```{r}
+zw_ownership
+```
+
+
+## Products
+
+Uganda.
+
+```{r}
+ug_products <- readRDS(file = "../../../Data Prep/UG/product_holding/products_rating_matrix.rds") %>% 
+  colnames()
+```
+
+Zimbabwe.
+
+```{r}
+zw_products
+```
+
+
+## Table
+
+Uganda.
+
+```{r}
+ug_tibble <- tibble(
+    country = "Uganda",
+    products = ug_products,
+    ownership = c(ug_ownership,
+                  rep(NA, times = length(ug_products) - length(ug_ownership))
+                  )
+    )
+
+ug_tibble
+```
+
+Zimbabwe.
+```{r}
+zw_tibble <- tibble(
+    country = "Zimbabwe",
+    products = zw_products,
+    ownership = c(zw_ownership,
+                  rep(NA, times = length(zw_products) - length(zw_ownership))
+                  )
+    )
+
+zw_tibble
+```
+
+
+## Update db
+
+```{r}
+copy_to(dest = con_supp, 
+        df = support_df, 
+        name = "support", 
+        overwrite = TRUE, 
+        temporary = FALSE)
+```
+
+Uganda.
 
 ```{r}
 dbWriteTable(con = con_supp, "support", ug_tibble, append=TRUE, row.names = FALSE)
 ```
 
+Zimbabwe.
+
+```{r}
+dbWriteTable(conn = con_supp, 
+             name = "support", 
+             value = zw_tibble, 
+             append=TRUE, 
+             row.names = FALSE)
+```
 
 # Sense check
 
 
 ```{r}
-dbListTables(conn = con_supp)
-
 tbl(src = con_supp, "support") %>% 
   filter(country %in% c("Zimbabwe","Kenya")) %>% 
   collect() %>% 
@@ -172,85 +231,17 @@ tbl(src = con_supp, "support") %>%
   filter(country=="Uganda") %>% 
   collect() %>% 
   dim()
+
+dim(zw_tibble)
+
+tbl(src = con_supp, "support") %>% 
+  filter(country=="Zimbabwe") %>% 
+  collect() %>% 
+  dim()
+
+tbl(src = con_supp, "support") %>% 
+  distinct(country)
 ```
-
-
-# Tests
-
-### Loading all models at once
-
-```{r}
-#Read model paths
-model_paths <- dir(path = "../../../App/uap_cross_sell/objects/models/",
-    pattern = "*.rds$", 
-    all.files = FALSE, 
-    full.names = TRUE, 
-    recursive = FALSE, 
-    ignore.case = TRUE, 
-    include.dirs = FALSE)
-
-#Extract model names
-model_names <- 
-  str_extract_all(string = model_paths,
-                  pattern = "[a-z]+_rec_model") %>% 
-  unlist()
-
-#Read all models into a named list
-rec_models <- map(.x = model_paths, .f = readRDS)
-names(rec_models) <- model_names
-
-#Assign into environment
-for(model in seq_along(model_names)){
-  assign(x = model_names[model], value = rec_models[[model]])
-}
-
-
-```
-
-### Model & con list
-
-```{r}
-model_con_list <- list(Kenya = c("ke_rec_model","con_ke"),
-                       Zimbabwe = c("zw_rec_model","con_zw"),
-                       Uganda = c("ug_rec_model","con_ug"))
-```
-
-
-```{r}
-model_con_list$Kenya[[1]]
-```
-
-
-### Changing connections based on an input value
-
-```{r}
-con_ke <- dbConnect(drv = SQLite(), "../../../App/uap_cross_sell/db/ke_cs.db") 
-con_zw <- dbConnect(drv = SQLite(), "../../../App/uap_cross_sell/db/zw_cs.db") 
-con_ug <- dbConnect(drv = SQLite(), "../../../App/uap_cross_sell/db/ug_cs.db") 
-```
-
-Pass it a variable "country" that changes the tbl being returned.
-
-```{r}
-country <- "Kenya"
-
-
-# tbl(src = case_when(country=="Kenya" ~ con_ke,
-#                     TRUE ~ con_zw), 
-#     "ke_recommendations_detailed")
-
-#con_test = case_when(country=="Kenya" ~ con_ke, TRUE ~ con_zw)
-#con_test <- ifelse(country=="Kenya",yes = con_ke, con_zw)
-
-# assign(x = "con_test", con_ke)
-# tbl(src = con_test, "ke_recommendations_detailed")
-# 
-# assign(x = "con_test", if(country=="Kenya") con_ke else con_zw)
-
-if(country=="Kenya") con_test=con_ke else con_test=con_zw
-tbl(src = con_test, "recommendations_detailed")
-```
-
 
 
 
