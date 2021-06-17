@@ -657,6 +657,16 @@ predict(object = zw_rec_model,
   slice(1:3)
 ```
 
+
+```{r}
+copy_to(dest = con_zw, 
+        df = customer_details_final, 
+        name = "customer_details_final",
+        overwrite = TRUE, 
+        temporary = FALSE)
+```
+
+
 #### User defined function
 
 
@@ -1014,7 +1024,7 @@ predict_on_choices(user_choices = cust_prods_upload, recomm_limit = 3)
 ```{r}
 # Project image
 save.image(file = "../outputs/11June_Models.RData")
-#load(file = "../outputs/11June_Models.RData")
+load(file = "../outputs/11June_Models.RData")
 
 # Objects for deployment
 saveRDS(object = zw_rec_model, 
