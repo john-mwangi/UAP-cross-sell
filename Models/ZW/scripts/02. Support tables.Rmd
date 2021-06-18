@@ -116,6 +116,8 @@ copy_to(dest = con_supp,
 
 ## Remove outdated info
 
+### Zimbabwe
+
 ```{r}
 support_df <-
 tbl(src = con_supp, "support") %>% 
@@ -126,9 +128,78 @@ support_df
 ```
 
 
+### Ghana
+
+Compare the two databases.
+
+```{r}
+supp_sqlite_path_gh <- "../../../App/uap_cross_sell/db/support_tayo.db"
+con_supp_gh <- dbConnect(drv = RSQLite::SQLite(), supp_sqlite_path_gh)
+
+dbListTables(conn = con_supp_gh)
+```
+
+
+```{r}
+tbl(src = con_supp_gh, "support") %>% 
+  collect() %>% 
+  summarise(across(.cols = everything(), 
+                   .fns = ~length(unique(.))))
+
+
+tbl(src = con_supp_gh, "support") %>% 
+  distinct(country)
+
+
+tbl(src = con_supp_gh, "support") %>% 
+  filter(country=="Ghana")
+```
+
+
+```{r}
+tbl(src = con_supp, "support") %>% 
+  collect() %>% 
+  summarise(across(.cols = everything(), 
+                   .fns = ~length(unique(.))))
+
+tbl(src = con_supp, "support") %>% 
+  distinct(country)
+```
+
+Remove outdated information
+
+```{r}
+support_df <-
+tbl(src = con_supp, "support") %>% 
+  filter(country != "Ghana") %>% 
+  collect()
+
+support_df
+```
+
+Extract up-to-date information.
+
+```{r}
+support_gh <-
+tbl(src = con_supp_gh, "support") %>% 
+  filter(country=="Ghana") %>% 
+  collect()
+
+support_gh
+```
+
+Merge the two dataframes.
+
+```{r}
+support_tbl <- rbind(support_df, support_gh)
+
+support_tbl
+```
+
+
 ## Ownership
 
-Uganda.
+### Uganda
 
 ```{r}
 ug_ownership <- readRDS(file = "../../UG/outputs/ug_recommendations_detailed.rds") %>% 
@@ -138,23 +209,22 @@ ug_ownership <- readRDS(file = "../../UG/outputs/ug_recommendations_detailed.rds
 ```
 
 
-Zimbabwe.
+### Zimbabwe
 
 ```{r}
 zw_ownership
 ```
 
-
 ## Products
 
-Uganda.
+### Uganda
 
 ```{r}
 ug_products <- readRDS(file = "../../../Data Prep/UG/product_holding/products_rating_matrix.rds") %>% 
   colnames()
 ```
 
-Zimbabwe.
+### Zimbabwe
 
 ```{r}
 zw_products
@@ -217,6 +287,18 @@ dbWriteTable(conn = con_supp,
              row.names = FALSE)
 ```
 
+
+Ghana.
+
+```{r}
+copy_to(dest = con_supp,
+        df = support_tbl, 
+        name = "support", 
+        overwrite = TRUE, 
+        temporary = FALSE)
+```
+
+
 # Sense check
 
 
@@ -241,6 +323,10 @@ tbl(src = con_supp, "support") %>%
 
 tbl(src = con_supp, "support") %>% 
   distinct(country)
+
+tbl(src = con_supp, "support") %>% 
+  collect() %>% 
+  summarise_all(~length(unique(.)))
 ```
 
 
