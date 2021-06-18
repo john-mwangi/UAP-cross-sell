@@ -301,10 +301,28 @@ account_info %>%
 summary(account_info$product_count)
 
 account_info %>% 
+  filter(product_count==max(product_count))
+
+account_info %>% 
   filter(UNIQUE_ID=="107793")
 
 account_info %>% 
   filter(UNIQUE_ID=="00064081170259dce6faccfe4bf69ad82d7e94315c5bf69599326b89fafb9155")
+
+account_info %>% 
+  select(UNIQUE_ID, ACCOUNT_NO, ownership) %>% 
+  mutate(num_accounts = map_dbl(.x = ACCOUNT_NO, 
+                                .f = ~str_count(string = ., pattern = ",") + 1
+                                )
+         ) %>% 
+  arrange(desc(num_accounts)) %>% 
+  filter(str_detect(string = ownership, pattern = ",")) %>%
+  filter(str_detect(string = ACCOUNT_NO, pattern = ",")) %>% 
+  #filter(num_accounts==5) %>% 
+  head(1)
+
+account_info %>% 
+  filter(ownership=="Life, Lending")
 ```
 
 
@@ -322,7 +340,7 @@ account_info %>%
                                  Products:{products}
                                  {businessline_details}",
                                  .na = "Not Found")) %>% 
-  select(UNIQUE_ID, ACCOUNT_NO, ownership, intermediated, customer_details)
+  select(UNIQUE_ID, ownership, intermediated, customer_details)
 
 customer_details_final
 ```
