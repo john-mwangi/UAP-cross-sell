@@ -334,6 +334,7 @@ zw_recommendations_unique_id %>%
 
 zw_recommendations_detailed
 ```
+
 ## Sense check
 
 Customers with National IDs having multiple Account Numbers.
@@ -673,7 +674,7 @@ copy_to(dest = con_zw,
 ```{r}
 predict_on_accounts <- function(account_num, recomm_limit){
   
-# Clean input values
+# Clean & vectorize input values
 input_account_num <- str_remove_all(string = account_num, 
                                     pattern = " ")
 input_account_num <- str_split(string = input_account_num, 
@@ -744,6 +745,10 @@ We allow the end-user get the top n recommended customers based on this criteria
 ### Dataframe
 
 ```{r}
+zw_recommendations_detailed %>% 
+  ungroup() %>% 
+  count(ownership)
+
 zw_recommendations_detailed %>% 
   ungroup() %>% 
   filter(intermediated=="No") %>% 
@@ -1023,12 +1028,14 @@ predict_on_choices(user_choices = cust_prods_upload, recomm_limit = 3)
 
 ```{r}
 # Project image
-save.image(file = "../outputs/11June_Models.RData")
-load(file = "../outputs/11June_Models.RData")
+save.image(file = "../outputs/18June_Models.RData")
+#load(file = "../outputs/11June_Models.RData")
 
 # Objects for deployment
 saveRDS(object = zw_rec_model, 
         file = "../../../App/uap_cross_sell/objects/models/Zimbabwe.rds")
+saveRDS(object = products_rating_matrix, 
+        file = "../../../App/uap_cross_sell/objects/rating_matrix/Zimbabwe.rds")
 
 saveRDS(object = zw_recommendations_detailed,
         file = "../outputs/zw_recommendations_detailed.rds")
