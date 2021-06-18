@@ -62,7 +62,8 @@ read.csv(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/c
   select(UNIQUE_ID = CUSTOMER_NO,AGENT_CODE) %>% 
   mutate(intermediated = if_else(condition = is.na(AGENT_CODE), 
                                  true = "No", 
-                                 false = "Yes"))
+                                 false = "Yes")) %>% 
+  mutate(UNIQUE_ID = as.character(UNIQUE_ID))
 
 gi_customers_raw
 ```
@@ -176,7 +177,6 @@ readRDS(file = "../../01. Determine product holding/outputs/objects/asset_produc
 
 gi_products <-
 readRDS(file = "../../01. Determine product holding/outputs/objects/gi_product_holding.rds") %>% 
-  select(PRODUCT = DESCRIPTION) %>% 
   distinct(PRODUCT) %>%
   mutate(BUSINESS_LINE = "General")
 
@@ -187,6 +187,7 @@ readRDS(file = "../../01. Determine product holding/outputs/objects/life_product
 
 lending_products <-
 readRDS(file = "../../01. Determine product holding/outputs/objects/lending_product_holding.rds") %>%
+  ungroup() %>% 
   distinct(PRODUCT) %>%
   mutate(BUSINESS_LINE = "Lending")
 ```
@@ -217,55 +218,132 @@ as(products_rating_matrix, "data.frame") %>%
 customer_ownership
 ```
 
+## Account summaries
+
+Summarise information concerning an account:
+* Business line of the account
+* Agent tied to the account
+
+Product tied to the account - some customers have up to 61 accounts and 23 products. What will be displayed is the Account Number and the Business Line of the Account and using that information, the source system can be queried for further details of the product and customer.
+
+
+Steps:
+- Merge all product holdings
+- Join with customer agents
+- Summarise by unique_id
+- Check if
+
+A table of individual accounts and the business lines to which they belong.
+
+```{r}
+account_businesslines <-
+rbind(readRDS(file = "../../01. Determine product holding/outputs/objects/asset_product_holding.rds") %>% 
+      mutate(BUSINESS_LINE = "Asset"),
+  
+      readRDS(file = "../../01. Determine product holding/outputs/objects/gi_product_holding.rds") %>% 
+      mutate(BUSINESS_LINE = "General"),
+  
+      readRDS(file = "../../01. Determine product holding/outputs/objects/lending_product_holding.rds") %>% 
+      mutate(BUSINESS_LINE = "Lending"),
+  
+      readRDS(file = "../../01. Determine product holding/outputs/objects/life_product_holding.rds") %>% 
+      mutate(BUSINESS_LINE = "Life")) %>% 
+  
+  select(UNIQUE_ID, ACCOUNT_NO, BUSINESS_LINE) %>% 
+  distinct(UNIQUE_ID, BUSINESS_LINE, .keep_all = TRUE)
+
+account_businesslines
+```
+
+Summarise customer details by the business line.
+
+```{r}
+account_summaries <-
+account_businesslines %>% 
+  left_join(customer_agents, by = "UNIQUE_ID") %>%
+  group_by(UNIQUE_ID) %>% 
+  mutate(businessline_details = paste0("Business line:",BUSINESS_LINE,
+                                       "\nAccount no:",ACCOUNT_NO, 
+                                       "\nAgent code:",AGENT_CODE, 
+                                       collapse = "\n\n")) %>% 
+  distinct(UNIQUE_ID, .keep_all = TRUE) %>% 
+  select(UNIQUE_ID, ACCOUNT_NO, businessline_details) %>% 
+  ungroup()
+
+account_summaries
+```
+
+## Sense check
+
+```{r}
+account_summaries %>% 
+  filter(UNIQUE_ID=="107793")
+```
+
 ## Account info
 
 ```{r}
 account_info <-
 customer_products %>% 
   left_join(product_count, by = "UNIQUE_ID") %>% 
-  left_join(customer_ownership, by = "UNIQUE_ID")
+  left_join(customer_ownership, by = "UNIQUE_ID") %>% 
+  left_join(account_summaries, by = "UNIQUE_ID")
 
 account_info
 ```
 
-## Checks
+## Sense check
 
 ```{r}
 account_info %>% 
   count(ownership)
 
 summary(account_info$product_count)
+
+account_info %>% 
+  filter(product_count==max(product_count))
+
+account_info %>% 
+  filter(UNIQUE_ID=="107793")
+
+account_info %>% 
+  filter(UNIQUE_ID=="00064081170259dce6faccfe4bf69ad82d7e94315c5bf69599326b89fafb9155")
+
+account_info %>% 
+  select(UNIQUE_ID, ACCOUNT_NO, ownership) %>% 
+  mutate(num_accounts = map_dbl(.x = ACCOUNT_NO, 
+                                .f = ~str_count(string = ., pattern = ",") + 1
+                                )
+         ) %>% 
+  arrange(desc(num_accounts)) %>% 
+  filter(str_detect(string = ownership, pattern = ",")) %>%
+  filter(str_detect(string = ACCOUNT_NO, pattern = ",")) %>% 
+  #filter(num_accounts==5) %>% 
+  head(1)
+
+account_info %>% 
+  filter(ownership=="Life, Lending")
 ```
+
 
 # CUSTOMER DETAILS
 
 Merge account and agent information.
 
 ```{r}
-rm(customer_details_final)
-
-gc()
-
-job::job({
 customer_details_final <-
 account_info %>% 
   left_join(customer_agents, by = "UNIQUE_ID") %>% 
-  mutate(customer_details = glue("Agent Code:{AGENT_CODE}
-                                 Product Holding:{product_count}
-                                 Current Products:{products}", 
+  select(-AGENT_CODE) %>% 
+  relocate(intermediated, .before = businessline_details) %>%
+  mutate(customer_details = glue("Product holding:{product_count}
+                                 Products:{products}
+                                 {businessline_details}",
                                  .na = "Not Found")) %>% 
-  select(-AGENT_CODE,-product_count,-products) %>% 
-  ungroup()
-}, title = "Customer details")
+  select(UNIQUE_ID, ownership, intermediated, customer_details)
 
-gc()
-```
-
-
-```{r}
 customer_details_final
 ```
-
 
 # EXPORT
 
@@ -278,7 +356,8 @@ saveRDS(object = customer_details_final,
 saveRDS(product_businesslines,"../outputs/product_businesslines.rds")
 
 # Project image
-save.image("../outputs/09June_Customer_details.RData")
+save.image("../outputs/17June_Customer_details.RData")
+#load("../outputs/17June_Customer_details.RData")
 ```
 
 

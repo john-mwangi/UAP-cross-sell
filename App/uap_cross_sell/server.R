@@ -92,7 +92,7 @@ shinyServer(function(input, output, session) {
   })
   
   
-  observeEvent(eventExpr = input$submit_sign_out,{dbDisconnect(conn = con)})
+  observeEvent(eventExpr = input$submit_sign_out,{dbDisconnect(conn = db_con()$con)})
   
   
   ##====== As soon as as user logs in successfully:
@@ -146,9 +146,63 @@ shinyServer(function(input, output, session) {
     updateSelectInput(session = session, inputId = "chosen_products", choices = products_update)
   })
   
-  ### load predictive models ===================
+  ### ZW predict function ======
+  predict_on_accounts <- function(account_num, recomm_limit){
+    table_order <- c("UNIQUE_ID", "PRODUCT", "BUSINESS_LINE", "rating", "max_rating", "ownership", "intermediated", "product_value", "customer_details")
+    
+    # Clean input values
+    input_account_num <- str_remove_all(string = account_num, 
+                                        pattern = " ")
+    input_account_num <- str_split(string = input_account_num, 
+                                   pattern = ",")[[1]]
+    
+    # Retrieve unique identifiers
+    res_tbl <- tibble()
+    
+    for(account in seq_along(input_account_num)){
+      
+      query_stmt <-
+        paste0("SELECT * FROM uniqueid_accounts WHERE ACCOUNT_NO LIKE '%",input_account_num[account],"%'") %>% 
+        SQL()
+      
+      query_result <- 
+        dbSendStatement(conn = con_zw, 
+                        statement = query_stmt)
+      
+      res_tbl <- rbind(res_tbl, dbFetch(res = query_result))
+      dbClearResult(res = query_result)
+    }
+    
+    cust_unique_ids <- res_tbl %>% pull(UNIQUE_ID)
+    
+    # Predict & merge
+    user_account_recommendations <-
+      predict(object = readRDS(paste0("./objects/models/",input$country,".rds")),
+              newdata = readRDS(paste0("./objects/rating_matrix/",input$country,".rds"))[cust_unique_ids,],
+              type = "ratings") %>% 
+      as("data.frame") %>% 
+      rename(UNIQUE_ID = user, PRODUCT = item) %>% 
+      left_join(tbl(src = db_con()$con, "product_businesslines"), by = "PRODUCT", copy = TRUE) %>% 
+      left_join(tbl(src = db_con()$con, "uniqueid_accounts"), by = "UNIQUE_ID", copy = TRUE) %>% 
+      left_join(tbl(src = db_con()$con, "product_values"), by = "PRODUCT", copy = TRUE) %>% 
+      left_join(tbl(src = db_con()$con, "customer_details_final"), by = "UNIQUE_ID", copy = TRUE) %>% 
+      select(any_of(c("ACCOUNT_NO",table_order))) %>% 
+      select(-UNIQUE_ID) %>% 
+      group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
+      mutate(max_rating = max(rating)) %>% 
+      relocate(max_rating, .after = rating) %>% 
+      arrange(desc(rating)) %>% 
+      slice(1:recomm_limit) %>% 
+      mutate(rating = round(rating, ROUND_OFF),
+             max_rating = round(max_rating, ROUND_OFF)) %>%
+      rename(inter = intermediated,
+             value = product_value) %>% 
+      setNames(str_to_upper(colnames(.)))
+    
+    return(user_account_recommendations)
+  }
   
-  ### Create prediction function ================
+  ### Function for predicting using products ================
   predict_on_choices <- function(user_choices, recomm_limit){
     
     #Products not selected
@@ -210,8 +264,14 @@ shinyServer(function(input, output, session) {
   
   
   ###============== REACTIVES========
-  
   dfScenario1 = reactive({
+    
+    if (input$country=="Zimbabwe"){
+      return(list(recommendations=predict_on_accounts(account_num = input$customer_ids,
+                                                      recomm_limit = 3)))
+    }
+    
+    else {
       
     records <- strsplit(x = input$customer_ids, split = ",")[[1]]
     
@@ -231,8 +291,8 @@ shinyServer(function(input, output, session) {
     
     return(list(recommendations=chosen_customers))
     
-  })
-  
+  }})
+
   
   dfScenario2 = reactive({
     
