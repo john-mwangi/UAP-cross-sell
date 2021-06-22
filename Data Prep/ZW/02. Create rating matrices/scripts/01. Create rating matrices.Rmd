@@ -12,6 +12,8 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r message=FALSE, warning=FALSE}
 rm(list = ls())
 
+library(dtplyr)
+library(data.table)
 library(recommenderlab)
 library(tidyverse)
 ```
@@ -27,6 +29,8 @@ gi_product_holding <- readRDS(file = "../../01. Determine product holding/output
 life_product_holding <- readRDS(file = "../../01. Determine product holding/outputs/objects/life_product_holding.rds")
 
 lending_product_holding <- readRDS("../../01. Determine product holding/outputs/objects/lending_product_holding.rds")
+
+banking_product_holding <- readRDS("../../01. Determine product holding/outputs/objects/banking_product_holding.rds")
 ```
 
 # Merge the tables
@@ -34,31 +38,40 @@ lending_product_holding <- readRDS("../../01. Determine product holding/outputs/
 Ensure customer-product combination is unique across the subsidiary.
 
 ```{r}
-products_df_raw <-
+products_df_raw_query <-
 rbind(asset_product_holding,
       life_product_holding,
       gi_product_holding,
-      lending_product_holding) %>% 
+      lending_product_holding,
+      banking_product_holding) %>% 
+  lazy_dt() %>% 
+  group_by(UNIQUE_ID) %>% 
+  mutate(ACCOUNT_NO = paste0(unique(ACCOUNT_NO), collapse = ",")) %>% 
+  ungroup() %>% 
   distinct(UNIQUE_ID, PRODUCT, .keep_all = TRUE) %>% 
   select(-n) %>% 
-  count(UNIQUE_ID,PRODUCT)
+  add_count(UNIQUE_ID,PRODUCT)
+```
+
+
+```{r}
+products_df_raw <- products_df_raw_query %>% as.data.table() %>% select(-.add)
 
 products_df_raw
-
-unique(products_df_raw$n)
 ```
+
 
 # Overall product holding
 
-There are 184K customers. On average, people purchase just one product.
+On average, people purchase just one product.
 
-```{r}
+```{r eval=FALSE, include=FALSE}
 products_df_raw %>% 
   count(UNIQUE_ID) %>% 
   summary()
 ```
 
-```{r}
+```{r eval=FALSE, include=FALSE}
 purchase_dist <-
 products_df_raw %>% 
   count(UNIQUE_ID) %>% 
@@ -84,27 +97,27 @@ purchase_dist
 
 ```{r}
 products_df <-
-products_df_raw %>% 
+products_df_raw %>%
   pivot_wider(names_from = PRODUCT, 
               values_from = n, 
               values_fill = 0)
 
-dim(products_df)
 products_df
 ```
+
 
 # Convert to matrix
 
 ```{r}
 products_matrix <-
 products_df %>% 
-  select(-UNIQUE_ID) %>% 
+  select(-UNIQUE_ID, -ACCOUNT_NO) %>% 
   as.matrix()
 
 rownames(products_matrix) <- products_df %>% pull(UNIQUE_ID)
 ```
 
-# Check matrix
+# Sense check
 
 Check for NA values in the product names.
 
@@ -140,6 +153,7 @@ It should be indicated on the app that Account Number is:
 * General Ins: CUSTOMER_NO
 * Life Ins: ACCOUNT_NUMBER
 * Lending: account_no
+* Postilion: ACCOUNT_NUMBER
 
 
 # Export
@@ -148,7 +162,7 @@ It should be indicated on the app that Account Number is:
 saveRDS(object = products_rating_matrix, 
         file = "../outputs/products_rating_matrix.rds")
 
-save.image("../outputs/09June_RatingMatrix.RData")
+save.image("../outputs/22June_RatingMatrix.RData")
 #load("./05May_RatingMatrix.RData")
 ```
 
