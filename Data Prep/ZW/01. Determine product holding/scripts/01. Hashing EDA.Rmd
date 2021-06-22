@@ -7,7 +7,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-UAP-OM recommends AES 256 bit, RSA 256 bit encryption. We will be encrypting using RSA 2048 bit protection. 
+UAP-OM recommends at least AES 256 bit or RSA 256 bit encryption.
 
 ```{r message=FALSE, warning=FALSE}
 rm(list = ls())
@@ -27,6 +27,7 @@ test <- tibble(data = c("one","two","one"))
 
 ## RSA
 
+* RSA 2048 bit protection. 
 * PRIVATE KEY: uap_om_rsa
 * PUBLIC KEY: uap_om_rsa.pub
 
@@ -65,6 +66,7 @@ test %>%
                                     algo = "sha256",
                                     serialize = FALSE)))
 ```
+
 
 # National ID
 
