@@ -14,7 +14,7 @@ sidebarLayout(
     fluidRow(id = "side_panel",
     selectInput(inputId = "country", 
                 label = "Select your country", 
-                choices = c("Kenya","Uganda","Zimbabwe","Nigeria","Ghana"), 
+                choices = c("Kenya","Uganda","Zimbabwe","Nigeria","Ghana","Sudan"), 
                 selected = "Kenya", 
                 multiple = FALSE),
     numericInput(inputId = "recomm_limit", 
@@ -47,7 +47,7 @@ sidebarLayout(
                                         that you'd want to target and you have their account number."),
                              textInput(inputId = "customer_ids", 
                                        label = "Enter account numbers separated by commas",
-                                       value = "1337,100003,0000013188,3013656028,AG002068,AS000883"),
+                                       value = "1337,100003,0000013188,3013656028,AG002068,AS000883,0000012198,0000012202"),
                              withSpinner(dataTableOutput(outputId = "customer_recomms"), color = "#78C2AD")),
                     
                     tabPanel(title = "CUSTOMERS",

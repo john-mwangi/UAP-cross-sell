@@ -102,6 +102,7 @@ shinyServer(function(input, output, session) {
   ug_sqlite_path <- "./db/ug_cs.db"
   ng_sqlite_path <- "./db/ng_cs.db"
   gh_sqlite_path <- "./db/gh_cs.db"
+  sd_sqlite_path <- "./db/sd_cs.db"
   supp_sqlite_path <- "./db/support.db"
   
   con_ke <- dbConnect(drv = SQLite(), ke_sqlite_path)
@@ -109,6 +110,7 @@ shinyServer(function(input, output, session) {
   con_ug <- dbConnect(drv = SQLite(), ug_sqlite_path)
   con_ng <- dbConnect(drv = SQLite(), ng_sqlite_path)
   con_gh <- dbConnect(drv = SQLite(), gh_sqlite_path)
+  con_sd <- dbConnect(drv = SQLite(), sd_sqlite_path)
   con_supp <- dbConnect(drv = SQLite(), supp_sqlite_path)
   
   db_con = reactive({
@@ -118,6 +120,7 @@ shinyServer(function(input, output, session) {
            "Uganda" = con <- con_ug,
            "Nigeria" = con <- con_ng,
            "Ghana" = con <- con_gh,
+           "Sudan" = con <- con_sd,
            stop("Invalid country name")
            )
     

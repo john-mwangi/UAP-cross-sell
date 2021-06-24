@@ -78,7 +78,8 @@ insufficent_products
 ```{r}
 general_product_holding <-
 general_product_holding_raw %>% 
-  filter(!POLICY_TYPE %in% insufficent_products)
+  filter(!POLICY_TYPE %in% insufficent_products) %>%
+  filter(!is.na(ACCOUNT_NO))
 
 general_product_holding
 ```
@@ -95,109 +96,14 @@ general_product_holding %>%
   count(POLICY_TYPE)
 ```
 
-
-# LIFE INS
-
-## Data exploration
-
-Merge all extracts together.
-
-```{r}
-gibbs_raw <- read_excel(path = "../../../../../../C - Documentation/Data/festus_extraction/NG/life/policy_header/Policy_Header_Life.csv_gibbs_life.xlsx")
-
-compen_raw <- read_csv(file = "../../../../../../C - Documentation/Data/festus_extraction/NG/life/policy_header/Policy_Life_20210504_compen_life.csv")
-
-oipa_raw <- read_csv(file = "../../../../../../C - Documentation/Data/festus_extraction/NG/life/policy_header/PolicyHeaderLife_20210301_195929_oipa_life.csv")
-```
-
-### gibbs
-
-* `ACCOUNT_NUMBER` is the unique customer identifier.
-* `CONTRACT_GROUP_NAME` is the product name column
-
-```{r}
-gibbs_raw
-
-gibbs_raw %>% 
-  count(ACCOUNT_NUMBER, sort = TRUE)
-
-gibbs_raw %>% 
-  filter(ACCOUNT_NUMBER=="001/HO/001/L07/607")
-```
-
-### compen
-
-This is test data.
-
-```{r}
-compen_raw
-```
-
-### oipa
-
-* `ACCOUNT_NUMBER` is the unique customer identifier
-* `CONTRACT_GROUP_NAME` is the product name column.
-
-```{r}
-oipa_raw %>% 
-  count(ACCOUNT_NUMBER, sort = TRUE)
-
-oipa_raw %>% 
-  filter(ACCOUNT_NUMBER=="0000001045")
-```
-
-## Life products
-
-Merge all products from different life insurance systems into one.
-
-```{r}
-life_products <-
-rbind(
-  gibbs_raw %>% 
-    select(ACCOUNT_NUMBER, CONTRACT_GROUP_NAME, AGENT_CONTRACT_ID, CONTRACT_ID),
-  oipa_raw %>% 
-    select(ACCOUNT_NUMBER, CONTRACT_GROUP_NAME, AGENT_CONTRACT_ID, CONTRACT_ID)
-  )
-
-life_products
-```
-
-
-## Product holding
-
-```{r}
-life_product_holding <-
-  life_products %>% 
-  distinct(ACCOUNT_NUMBER,CONTRACT_GROUP_NAME) %>% 
-  count(ACCOUNT_NUMBER, CONTRACT_GROUP_NAME)
-
-life_product_holding
-```
-
-## Sense checks
-
-```{r}
-anyNA(life_product_holding)
-
-life_product_holding %>% 
-  distinct(n)
-
-life_product_holding %>% 
-  count(CONTRACT_GROUP_NAME)
-```
-
 # EXPORT
 
 ```{r}
-save.image(file = "../outputs/02June.RData")
-load(file = "../outputs/02June.RData")
+save.image(file = "../outputs/23June.RData")
+load(file = "../outputs/23June.RData")
 
 saveRDS(object = general_product_holding, 
         file = "../outputs/general_product_holding.rds")
-saveRDS(object = life_product_holding, 
-        file = "../outputs/life_product_holding.rds")
-saveRDS(object = life_products,
-        file = "../outputs/life_products.rds")
 ```
 
 
