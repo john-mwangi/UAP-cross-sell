@@ -31,7 +31,7 @@ Locating the unique customer identifier.
 ```{r}
 # Import id column as character
 general_products <- 
-  read_csv(file = "../../../../../../C - Documentation/Data/festus_extraction/NG/general/Policy_Header_Non_Life_GI.csv") %>% 
+  read_excel("../../../../../../Sudan/GI/policyheader_nonlife_sudan.xls") %>% 
   mutate(ACCOUNT_NO = as.character(ACCOUNT_NO))
 ```
 
@@ -47,7 +47,7 @@ general_products %>%
   count(PLAN_NAME)
 
 general_products %>% 
-  count(BUSINESS_TYPE)
+  count(POLICY_TYPE)
 ```
 
 ## Product holding
@@ -57,8 +57,8 @@ The table below returns a table showing products held by each account (1 product
 ```{r}
 general_product_holding_raw <-
 general_products %>% 
-  distinct(ACCOUNT_NO,BUSINESS_TYPE) %>% 
-  count(ACCOUNT_NO,BUSINESS_TYPE)
+  distinct(ACCOUNT_NO,POLICY_TYPE) %>% 
+  count(ACCOUNT_NO,POLICY_TYPE)
 
 general_product_holding_raw
 ```
@@ -68,9 +68,9 @@ Because GI products are very many, we filter out general insurance products that
 ```{r}
 insufficent_products <-
 general_product_holding_raw %>% 
-  count(BUSINESS_TYPE, sort = TRUE) %>% 
-  filter(n<=10) %>% 
-  pull(BUSINESS_TYPE)
+  count(POLICY_TYPE, sort = TRUE) %>% 
+  filter(n<=15) %>% 
+  pull(POLICY_TYPE)
 
 insufficent_products
 ```
@@ -78,7 +78,7 @@ insufficent_products
 ```{r}
 general_product_holding <-
 general_product_holding_raw %>% 
-  filter(!BUSINESS_TYPE %in% insufficent_products)
+  filter(!POLICY_TYPE %in% insufficent_products)
 
 general_product_holding
 ```
@@ -92,7 +92,7 @@ general_product_holding %>%
 anyNA(general_product_holding)
 
 general_product_holding %>% 
-  count(BUSINESS_TYPE)
+  count(POLICY_TYPE)
 ```
 
 
