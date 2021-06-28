@@ -83,11 +83,67 @@ general_statements_raw %>%
 general_product_values
 ```
 
+
+# HEALTH INSURANCE
+
+## Statements
+
+```{r}
+health_statements_raw <-
+  as_tibble(fread("../../../../../../Sudan/Health/Health Policy Statement sudan.csv")) %>% 
+  rename ("AMOUNT" = "RECEIPT_AMOUNT") %>%
+  mutate (TRANSACTION_DATE = as.Date(TRANSACTION_DATE, format="%m/%d/%Y"))
+```
+
+
+"Create Policy" is when a policy is bought.
+
+```{r}
+health_statements_raw %>% 
+  filter(AMOUNT > 0) %>% 
+  count(TRANSACTION_TYPE)
+```
+
+## Products
+
+Product names with policy number.
+
+```{r}
+health_products <-
+as_tibble(fread("../../../../../../Sudan/Health/policyheader_nonlife_sudan.csv")) %>% 
+  filter(!is.na(ACCOUNT_NO)) %>%
+  select(POLICY_NO, POLICY_TYPE) 
+
+health_products
+```
+
+```{r}
+length(intersect(health_products$POLICY_NO, health_statements_raw$POLICY_NO))
+```
+## Product values
+
+```{r}
+health_product_values <-
+health_statements_raw %>% 
+  filter(AMOUNT > 0) %>% 
+  # filter(TRANSACTION_TYPE == "Create Policy") %>% 
+  filter(TRANSACTION_DATE >= "2018-01-01") %>% 
+  left_join(health_products, by = "POLICY_NO") %>% 
+  select(POLICY_TYPE, AMOUNT) %>% 
+  group_by(POLICY_TYPE) %>% 
+  summarise(product_value = round(mean(AMOUNT)),
+            accounts = n()) %>% 
+  rename(PRODUCT = POLICY_TYPE)
+
+health_product_values
+```
+
+
 # ALL PRODUCTS
 
 ```{r}
 product_values <- 
-      general_product_values
+  bind_rows(general_product_values, health_product_values)
 
 product_values
 ```
@@ -132,8 +188,8 @@ product_values
 # EXPORT
 
 ```{r}
-save.image("../outputs/23June_Product_Values.RData")
-#load("../outputs/16May_Product_Values.RData")
+save.image("../outputs/28June_Product_Values.RData")
+# load("../outputs/23June_Product_Values.RData")
 
 saveRDS(product_values,"../outputs/product_values.rds")
 ```

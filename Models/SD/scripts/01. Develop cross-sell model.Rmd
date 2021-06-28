@@ -133,24 +133,6 @@ sd_rec_model <- sd_hyb
 
 ## Extract ratings
 
-### Approach 1
-
-Preferred approach.
-
-```{r eval=FALSE, include=FALSE}
-# Chunk taking too long
-
-ng_recommendations <- 
-  predict(object = ng_rec_model, 
-          newdata = products_rating_matrix, 
-          type = "ratings") %>% 
-  as("data.frame") %>% 
-  rename(ACCOUNT_NO = user,
-         PRODUCT = item)
-
-ng_recommendations
-```
-
 ### Approach 2
 
 Using matrices.
@@ -741,7 +723,7 @@ predict_on_choices(user_choices = cust_prods_upload, recomm_limit = 3)
 
 ```{r}
 # Project image
-save.image(file = "../outputs/23June_Models.RData")
+save.image(file = "../outputs/28June_Models.RData")
 # load(file = "../outputs/23June_Models.RData")
 
 # Ojects for deployment

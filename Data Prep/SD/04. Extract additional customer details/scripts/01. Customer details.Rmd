@@ -50,11 +50,31 @@ read_excel("../../../../../../Sudan/GI/policyheader_nonlife_sudan.xls") %>%
 general_agents
 ```
 
+
+## Health Insurance
+
+`CUSTOMER_NO` is the customer identifier.
+
+```{r}
+health_agents <-
+as_tibble(fread("../../../../../../Sudan/Health/policyheader_nonlife_sudan.csv")) %>% 
+  mutate(ACCOUNT_NO = as.character(ACCOUNT_NO)) %>% 
+  select(ACCOUNT_NO,
+         AGENT_CODE = INTERMEDIARY_CODE) %>% 
+  distinct(ACCOUNT_NO, .keep_all = TRUE) %>% 
+  mutate(intermediated = if_else(condition = (AGENT_CODE == "NULL"),
+                                 true = "No",
+                                 false = "Yes"))
+
+health_agents
+```
+
 ## Customer agents
 
 ```{r}
 customer_agents <-
-  general_agents %>% 
+  bind_rows(general_agents, 
+      health_agents) %>% 
   distinct(ACCOUNT_NO, .keep_all = TRUE)
 
 customer_agents
@@ -110,12 +130,17 @@ general_products <-
 readRDS(file = "../../02. Determine product holding/outputs/general_product_holding.rds") %>% 
   distinct(PRODUCT = POLICY_TYPE) %>% 
   mutate(BUSINESS_LINE = "General")
+
+health_products <-
+as_tibble(readRDS(file = "../../02. Determine product holding/outputs/health_product_holding.rds")) %>% 
+  distinct(PRODUCT) %>% 
+  mutate(BUSINESS_LINE = "Health")
 ```
 
 
 ```{r}
 product_businesslines <-
-      general_products
+  rbind(health_products, general_products)
 
 product_businesslines
 ```
@@ -191,7 +216,7 @@ saveRDS(object = customer_details_final,
 saveRDS(product_businesslines,"../outputs/product_businesslines.rds")
 
 # Project image
-save.image("../outputs/23June_Customer_details.RData")
+save.image("../outputs/28June_Customer_details.RData")
 ```
 
 
