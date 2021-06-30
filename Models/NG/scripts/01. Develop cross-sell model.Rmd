@@ -298,6 +298,19 @@ ng_recommendations_df_proc %>%
 ng_recommendations_detailed
 ```
 
+
+# EXCLUSIONS
+
+Based on feedback from Rachel and `cokey@oldmutualnigeria.com` of Nigeria, data from OIPA and GIBBS should be excluded because OIPA has test data and GIBBS is no longer in use.
+
+```{r eval=FALSE, include=FALSE}
+ng_recommendations_detailed_filtered <-
+ng_recommendations_detailed %>% 
+  filter(BUSINESS_LINE != "Life")
+
+ng_recommendations_detailed_filtered
+```
+
 # CREATE DATABASE
 
 Create sqlite3 database to hold and query records. One country, one database, many tables.
@@ -400,6 +413,8 @@ records
 ```
 
 ### Predict
+
+The hybrid recommender does not weight the popular recommendations by 0.1
 
 ```{r}
 predict(object = ng_rec_model, 
@@ -733,6 +748,7 @@ predict_on_choices(user_choices = cust_prods_upload, recomm_limit = 3)
 ```
 
 
+
 # LIMITATIONS
 
 1. Product holding is per customer is 1 implying there is no cross-selling happening. This makes it harder to identify cross-selling trends.
@@ -743,8 +759,8 @@ predict_on_choices(user_choices = cust_prods_upload, recomm_limit = 3)
 
 ```{r}
 # Project image
-save.image(file = "../outputs/03June_Models.RData")
-#load(file = "../outputs/16May_Models.RData")
+save.image(file = "../outputs/30June_Models.RData")
+#load(file = "../outputs/03June_Models.RData")
 
 # Ojects for deployment
 saveRDS(object = ng_rec_model, 

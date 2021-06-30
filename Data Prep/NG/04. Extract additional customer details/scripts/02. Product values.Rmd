@@ -50,6 +50,7 @@ read_csv(file = "../../../../../../C - Documentation/Data/festus_extraction/NG/g
 ```{r}
 length(intersect(general_products$POLICY_NO, general_statements_raw$POLICY_NO))
 ```
+
 ## Product values
 
 ```{r}
