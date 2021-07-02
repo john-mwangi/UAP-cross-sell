@@ -96,13 +96,17 @@ rbind(
 support_df
 ```
 
-## Save into db
+## Establish db connection
 
 ```{r}
 supp_sqlite_path <- "../../../App/uap_cross_sell/db/support.db"
 con_supp <- dbConnect(drv = RSQLite::SQLite(), supp_sqlite_path)
+
+
 ```
 
+
+## Save to db
 
 ```{r}
 copy_to(dest = con_supp, 
@@ -113,6 +117,18 @@ copy_to(dest = con_supp,
 ```
 
 # UPDATES
+
+## Countries in db
+
+```{r}
+dbListTables(conn = con_supp)
+```
+
+```{r}
+tbl(src = con_supp, "support") %>% 
+  distinct(country)
+```
+
 
 ## Remove outdated info
 
@@ -198,6 +214,21 @@ support_tbl
 
 
 ## Ownership
+
+### Nigeria
+
+```{r}
+path_ng <- "../../../App/uap_cross_sell/db/ng_cs.db"
+con_ng <- dbConnect(drv = RSQLite::SQLite(), path_ng)
+dbListTables(conn = con_ng)
+
+ng_ownership <- tbl(src = con_ng, "recommendations_detailed") %>% 
+  distinct(ownership) %>% 
+  pull(ownership)
+
+ng_ownership
+```
+
 
 ### Uganda
 

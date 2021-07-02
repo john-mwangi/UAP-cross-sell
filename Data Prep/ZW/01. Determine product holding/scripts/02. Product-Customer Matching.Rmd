@@ -433,7 +433,6 @@ Data clean-up:
 - Extract the debtor and product name from loan products.
 
 ```{r}
-t24_products_cleaned <-
 t24_products_hashed %>%
   count(OLD_NAME) %>% 
   #filter(str_detect(OLD_NAME,".*[A-Z]\\s[H,L].*"))
@@ -447,14 +446,24 @@ t24_products_hashed %>%
   filter(purchases >= 10) %>% 
   select(OLD_NAME,PRODUCT) %>% 
   mutate(PRODUCT = str_remove(string = PRODUCT, pattern = "\\?1_DL.RESTORE")) %>% 
-  ungroup()
-
-t24_products_cleaned
+  ungroup() %>% 
+  write_csv("../../../../../../C - Documentation/Data/festus_extraction/ZW/t24_products_cleaned.csv")
 ```
 
 ### Product holding
 
 Collapse all account numbers owned by an individual into one.
+
+```{r}
+t24_products_cleaned <-
+read_excel(path = "../../../../../../C - Documentation/Data/festus_extraction/ZW/supp_product_details.xlsx",
+           sheet = "t24_products") %>% 
+  filter(is.na(EXCLUDE)) %>% 
+  select(OLD_NAME, PRODUCT)
+
+t24_products_cleaned
+```
+
 
 ```{r}
 t24_product_holding <-
@@ -520,9 +529,11 @@ As per discussions with Farai Leboho on 15 June 2021, eWallet and Textacash sit 
 post_products_cleaned <-
 post_raw %>% 
   count(OLD_NAME) %>% 
-  mutate(PRODUCT = str_extract(string = OLD_NAME, pattern = "eWallet|TEXTACASH"),
+  mutate(PRODUCT = str_extract(string = str_to_lower(OLD_NAME), 
+                               pattern = "ewallet|textacash"),
          PRODUCT = coalesce(PRODUCT,"Custom Card")) %>% 
-  select(OLD_NAME, PRODUCT)
+  select(OLD_NAME, PRODUCT) %>% 
+  filter(PRODUCT != "Custom Card")
 
 post_products_cleaned
 ```
@@ -535,6 +546,7 @@ Collapse all Account Numbers of owned by an individual into a single row.
 post_product_holding <-
 post_raw %>% 
   left_join(post_products_cleaned, by = "OLD_NAME") %>% 
+  filter(!is.na(PRODUCT)) %>% 
   select(-OLD_NAME) %>% 
   group_by(UNIQUE_ID) %>% 
   mutate(ACCOUNT_NO = paste0(unique(ACCOUNT_NO), collapse = ",")) %>% 
@@ -567,7 +579,7 @@ anyNA(banking_product_holding)
 # EXPORT
 
 ```{r}
-save.image(file = "../outputs/images/21June.RData")
+save.image(file = "../outputs/images/24June.RData")
 #load(file = "../outputs/images/09June.RData")
 
 saveRDS(object = asset_product_holding, 
