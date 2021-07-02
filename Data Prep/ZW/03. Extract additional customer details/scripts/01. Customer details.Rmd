@@ -110,6 +110,52 @@ read_csv(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/c
 lending_customers_raw
 ```
 
+## Banking
+
+### T24
+
+```{r}
+t24_customers_raw <-
+fread(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_t24_banking.csv",
+      na.strings = "") %>% 
+  select(NATIONAL_ID, AGENT_CODE) %>% 
+  filter(!is.na(NATIONAL_ID)) %>% 
+  mutate(intermediated = if_else(condition = is.na(AGENT_CODE),
+                                 true = "No",
+                                 false = "Yes")) %>% 
+  mutate(UNIQUE_ID = map_chr(.x = NATIONAL_ID, 
+                             .f = ~digest(object = .,
+                                          algo = "sha256",
+                                          serialize = FALSE))) %>% 
+  select(UNIQUE_ID, AGENT_CODE, intermediated) %>% 
+  distinct(UNIQUE_ID, .keep_all = TRUE)
+
+t24_customers_raw
+```
+
+### Postilion
+
+```{r}
+post_customers_raw <-
+fread(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_postilion_banking.csv",
+      na.strings = "") %>% 
+  select(UNIQUE_ID = CUSTOMER_NUMBER, AGENT_CODE) %>% 
+  mutate(intermediated = if_else(condition = is.na(AGENT_CODE),
+                                 true = "No",
+                                 false = "Yes")) %>% 
+  select(UNIQUE_ID, AGENT_CODE, intermediated) %>% 
+  distinct(UNIQUE_ID, .keep_all = TRUE)
+
+post_customers_raw
+```
+
+### Banking
+
+```{r}
+banking_customers_raw <- rbind(t24_customers_raw, post_customers_raw)
+```
+
+
 ## Customer agents
 
 ```{r}
@@ -117,7 +163,8 @@ customer_agents <-
 rbind(asset_customers_raw,
       life_customers_raw,
       gi_customers_raw,
-      lending_customers_raw) %>% 
+      lending_customers_raw,
+      banking_customers_raw) %>% 
   distinct(UNIQUE_ID, .keep_all = TRUE)
 
 customer_agents
@@ -152,18 +199,23 @@ product_count
 ## Customer products
 
 ```{r}
-gc()
-
-customer_products <-
-as(products_rating_matrix, "data.frame") %>% 
+customer_products_query <-
+as(products_rating_matrix, "data.frame") %>%
+  lazy_dt() %>% 
   group_by(user) %>% 
   mutate(products = paste0(item, collapse = ", ")) %>% 
   distinct(user, .keep_all = TRUE) %>% 
   select(UNIQUE_ID = user, products) %>% 
   ungroup()
+```
+
+
+```{r}
+customer_products <- customer_products_query %>% as.data.table()
 
 customer_products
 ```
+
 
 ## Ownership
 
@@ -190,6 +242,11 @@ readRDS(file = "../../01. Determine product holding/outputs/objects/lending_prod
   ungroup() %>% 
   distinct(PRODUCT) %>%
   mutate(BUSINESS_LINE = "Lending")
+
+banking_products <-
+readRDS(file = "../../01. Determine product holding/outputs/objects/banking_product_holding.rds") %>% 
+  distinct(PRODUCT) %>% 
+  mutate(BUSINESS_LINE = "Banking")
 ```
 
 
@@ -198,15 +255,17 @@ product_businesslines <-
 rbind(asset_products,
       life_products,
       gi_products,
-      lending_products)
+      lending_products,
+      banking_products)
 
 product_businesslines
 ```
 
 
 ```{r}
-customer_ownership <-
+customer_ownership_query <-
 as(products_rating_matrix, "data.frame") %>% 
+  lazy_dt() %>% 
   select(UNIQUE_ID = user, PRODUCT = item) %>% 
   left_join(product_businesslines, by = "PRODUCT") %>% 
   group_by(UNIQUE_ID) %>% 
@@ -214,9 +273,15 @@ as(products_rating_matrix, "data.frame") %>%
   select(UNIQUE_ID, ownership) %>% 
   distinct(UNIQUE_ID, .keep_all = TRUE) %>% 
   ungroup()
+```
+
+
+```{r}
+customer_ownership <- customer_ownership_query %>% as.data.table()
 
 customer_ownership
 ```
+
 
 ## Account summaries
 
@@ -247,7 +312,10 @@ rbind(readRDS(file = "../../01. Determine product holding/outputs/objects/asset_
       mutate(BUSINESS_LINE = "Lending"),
   
       readRDS(file = "../../01. Determine product holding/outputs/objects/life_product_holding.rds") %>% 
-      mutate(BUSINESS_LINE = "Life")) %>% 
+      mutate(BUSINESS_LINE = "Life"),
+      
+      readRDS(file = "../../01. Determine product holding/outputs/objects/banking_product_holding.rds") %>% 
+      mutate(BUSINESS_LINE = "Banking")) %>% 
   
   select(UNIQUE_ID, ACCOUNT_NO, BUSINESS_LINE) %>% 
   distinct(UNIQUE_ID, BUSINESS_LINE, .keep_all = TRUE)
@@ -356,7 +424,7 @@ saveRDS(object = customer_details_final,
 saveRDS(product_businesslines,"../outputs/product_businesslines.rds")
 
 # Project image
-save.image("../outputs/17June_Customer_details.RData")
+save.image("../outputs/24June_Customer_details.RData")
 #load("../outputs/17June_Customer_details.RData")
 ```
 

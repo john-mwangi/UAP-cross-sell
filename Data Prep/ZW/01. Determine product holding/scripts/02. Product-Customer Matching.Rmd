@@ -382,27 +382,104 @@ lending_product_holding %>%
 
 T24
 
-`CUSTOMER_NUMBER` is the unique customer identifier.
+`NATIONAL_ID` is the unique customer identifier.
 
 ```{r}
-read.csv(
+fread(
   file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_t24_banking.csv",
   sep = ";") %>%
-  filter(CUSTOMER_NUMBER=="5128655")
+  summarise(NATIONAL_ID = sum(is.na(NATIONAL_ID)),
+            records = nrow(.))
 ```
  
+
+### Data importation
+
+Filter out invalid National IDs:
+- Starting and ending with zeros
+- Null
+- Less than 5 characters in length
+
+```{r}
+t24_raw <-
+  fread(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_t24_banking.csv",
+        sep = ";",
+        na.strings = "") %>%
+  filter(!is.na(NATIONAL_ID)) %>% 
+  filter(str_length(NATIONAL_ID) > 5) %>% 
+  filter(!str_detect(string = NATIONAL_ID, pattern = "^0+/0+$"))
+
+t24_raw
+```
+
+### Hashing
+
+```{r}
+t24_products_hashed <-
+t24_raw %>% 
+  mutate(UNIQUE_ID = map_chr(.x = NATIONAL_ID,
+                             .f = ~digest(object = .,
+                                          algo = "sha256",
+                                          serialize = FALSE))) %>% 
+  select(UNIQUE_ID,ACCOUNT_NO = ACCOUNT_NUMBER,OLD_NAME = PRODUCT)
+
+t24_products_hashed
+```
+
+### Fix product names
+
+Data clean-up:
+- We filter out products purchased less than 10 times.
+- Extract the debtor and product name from loan products.
+
+```{r}
+t24_products_hashed %>%
+  count(OLD_NAME) %>% 
+  #filter(str_detect(OLD_NAME,".*[A-Z]\\s[H,L].*"))
+  extract(col = OLD_NAME,
+          into = c("COMPANY","PRODUCT"),
+          regex = "(.*[A-Z])\\s([H,L,N].*)",
+          remove = FALSE) %>% 
+  mutate(PRODUCT = coalesce(PRODUCT, OLD_NAME)) %>% 
+  group_by(PRODUCT) %>% 
+  mutate(purchases = sum(n)) %>% 
+  filter(purchases >= 10) %>% 
+  select(OLD_NAME,PRODUCT) %>% 
+  mutate(PRODUCT = str_remove(string = PRODUCT, pattern = "\\?1_DL.RESTORE")) %>% 
+  ungroup() %>% 
+  write_csv("../../../../../../C - Documentation/Data/festus_extraction/ZW/t24_products_cleaned.csv")
+```
+
 ### Product holding
+
+Collapse all account numbers owned by an individual into one.
+
+```{r}
+t24_products_cleaned <-
+read_excel(path = "../../../../../../C - Documentation/Data/festus_extraction/ZW/supp_product_details.xlsx",
+           sheet = "t24_products") %>% 
+  filter(is.na(EXCLUDE)) %>% 
+  select(OLD_NAME, PRODUCT)
+
+t24_products_cleaned
+```
+
 
 ```{r}
 t24_product_holding <-
-fread(
-  file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_t24_banking.csv",
-  sep = ";") %>% 
-  distinct(CUSTOMER_NUMBER, PRODUCT) %>% 
-  count(CUSTOMER_NUMBER, PRODUCT)
+t24_products_hashed %>%
+  left_join(t24_products_cleaned, by = "OLD_NAME") %>% 
+  filter(!is.na(PRODUCT)) %>% 
+  select(-OLD_NAME) %>%
+  group_by(UNIQUE_ID) %>% 
+  mutate(ACCOUNT_NO = paste0(unique(ACCOUNT_NO), collapse = ",")) %>% 
+  distinct(UNIQUE_ID, PRODUCT, .keep_all = TRUE) %>% 
+  add_count(UNIQUE_ID, PRODUCT) %>% 
+  ungroup()
 
 t24_product_holding
 ```
+
 
 ## Postilion 
 
@@ -413,53 +490,96 @@ t24_product_holding
 ```{r}
 fread(
   file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_postilion_banking.csv", 
-  sep = ";") %>% 
-  filter(str_detect(string = PRODUCT, pattern = "[[:alpha:]]")) %>% 
-  count(CUSTOMER_NUMBER, sort = TRUE)
+  sep = ";", 
+  na.strings = c(""," ")) %>% 
+  summarise(NATIONAL_ID = sum(is.na(NATIONAL_ID)),
+            recs = nrow(.))
+
+
+fread(
+  file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_postilion_banking.csv", 
+  sep = ";", 
+  na.strings = c(""," ")) %>% 
+  summarise(CUSTOMER_NUMBER = sum(is.na(CUSTOMER_NUMBER)),
+            recs = nrow(.))
+
+```
+
+### Products
+
+```{r}
+post_raw <-
+  fread(file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_postilion_banking.csv", 
+        sep = ";", 
+        na.strings = "") %>% 
+  select(UNIQUE_ID = CUSTOMER_NUMBER, 
+         OLD_NAME = PRODUCT, 
+         ACCOUNT_NO = ACCOUNT_NUMBER) %>% 
+  filter(!is.na(UNIQUE_ID)) %>% 
+  filter(str_detect(string = OLD_NAME, pattern = "[[:alpha:]]"))
+
+post_raw
+```
+
+### Fix product names
+
+As per discussions with Farai Leboho on 15 June 2021, eWallet and Textacash sit in Postilion while the rest are custom cards e.g. fuel cards, supermarket cards, etc.
+
+```{r}
+post_products_cleaned <-
+post_raw %>% 
+  count(OLD_NAME) %>% 
+  mutate(PRODUCT = str_extract(string = str_to_lower(OLD_NAME), 
+                               pattern = "ewallet|textacash"),
+         PRODUCT = coalesce(PRODUCT,"Custom Card")) %>% 
+  select(OLD_NAME, PRODUCT) %>% 
+  filter(PRODUCT != "Custom Card")
+
+post_products_cleaned
 ```
 
 ### Product holding
 
-```{r}
-postilion_product_holding <-
-fread(
-  file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/customer_postilion_banking.csv", 
-  sep = ";", na.strings = c(""," ")) %>% 
-  filter(!is.na(CUSTOMER_NUMBER)) %>% 
-  filter(str_detect(string = PRODUCT, pattern = "[[:alpha:]]")) %>% 
-  distinct(CUSTOMER_NUMBER, PRODUCT) %>% 
-  count(CUSTOMER_NUMBER, PRODUCT)
+Collapse all Account Numbers of owned by an individual into a single row.
 
-postilion_product_holding
+```{r}
+post_product_holding <-
+post_raw %>% 
+  left_join(post_products_cleaned, by = "OLD_NAME") %>% 
+  filter(!is.na(PRODUCT)) %>% 
+  select(-OLD_NAME) %>% 
+  group_by(UNIQUE_ID) %>% 
+  mutate(ACCOUNT_NO = paste0(unique(ACCOUNT_NO), collapse = ",")) %>% 
+  distinct(UNIQUE_ID, PRODUCT, .keep_all = TRUE) %>% 
+  add_count(UNIQUE_ID, PRODUCT) %>% 
+  ungroup()
+  
+
+post_product_holding
 ```
+
 
 ## Banking product holding
 
 ```{r}
-banking_product_holding <- 
-  rbind(t24_product_holding, 
-        postilion_product_holding) %>% 
-  distinct(CUSTOMER_NUMBER, PRODUCT, .keep_all = TRUE)
+banking_product_holding <- rbind(t24_product_holding, post_product_holding)
 
 banking_product_holding
 ```
 
 ## Sense check
 
-Banking has too many products including irrelevant ones.
-
 ```{r}
-banking_product_holding %>% 
-  distinct(PRODUCT) %>% 
-  write_csv("../outputs/banking_products.csv")
-```
+summary(banking_product_holding$n)
 
+anyNA(banking_product_holding)
+```
 
 
 # EXPORT
 
 ```{r}
-save.image(file = "../outputs/images/09June.RData")
+save.image(file = "../outputs/images/24June.RData")
 #load(file = "../outputs/images/09June.RData")
 
 saveRDS(object = asset_product_holding, 
@@ -470,6 +590,8 @@ saveRDS(object = gi_product_holding,
         file = "../outputs/objects/gi_product_holding.rds")
 saveRDS(object = lending_product_holding,
         file = "../outputs/objects/lending_product_holding.rds")
+saveRDS(object = banking_product_holding,
+        file = "../outputs/objects/banking_product_holding.rds")
 ```
 
 

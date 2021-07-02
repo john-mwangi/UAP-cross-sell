@@ -267,7 +267,7 @@ shinyServer(function(input, output, session) {
   
   
   ###============== REACTIVES========
-  dfScenario1 = reactive({
+  dfScenario1 = eventReactive(input$acc_search, {
     
     if (input$country=="Zimbabwe"){
       return(list(recommendations=predict_on_accounts(account_num = input$customer_ids,
@@ -275,8 +275,9 @@ shinyServer(function(input, output, session) {
     }
     
     else {
-      
-    records <- strsplit(x = input$customer_ids, split = ",")[[1]]
+    
+    customer_ids <- str_remove_all(string = input$customer_ids, pattern = " ")
+    records <- strsplit(x = customer_ids, split = ",")[[1]]
     
     chosen_customers <-
       tbl(src = db_con()$con, "recommendations_detailed") %>% 

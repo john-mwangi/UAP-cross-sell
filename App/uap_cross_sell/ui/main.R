@@ -44,12 +44,20 @@ sidebarLayout(
         tabsetPanel(type = "pills",
                     tabPanel(title = "ACCOUNT NO", 
                              tags$p("Use this tab when you already have a customer in mind 
-                                        that you'd want to target and you have their account number."),
-                             textInput(inputId = "customer_ids", 
-                                       label = "Enter account numbers separated by commas",
-                                       value = "1337,100003,0000013188,3013656028,AG002068,AS000883,0000012198,0000012202"),
-                             withSpinner(dataTableOutput(outputId = "customer_recomms"), color = "#78C2AD")),
-                    
+                                     that you'd want to target and you have their account number.
+                                     Click search to begin or query"),
+                             fluidRow(
+                               column(width = 4,
+                                      textInput(inputId = "customer_ids", 
+                                                label = "Enter account numbers separated by commas",
+                                                value = "1337,100003,0000013188,3013656028,AG002068,AS000883,0000012198,0000012202"", 
+                                                width = "100%")),
+                               column(width = 2,
+                                      tags$br(),
+                                      actionButton(inputId = "acc_search", label = "Search"))),
+                             withSpinner(ui_element = dataTableOutput(outputId = "customer_recomms"), 
+                                         color = "#78C2AD")),
+                                      
                     tabPanel(title = "CUSTOMERS",
                              tags$p("Use this tab when you don't have a specific customer in mind but
                                 you want a list of customers who are most likely to make a purchase."),
@@ -79,7 +87,8 @@ sidebarLayout(
                                                           label = "Maximum product value", 
                                                           value = 200000))),
                              tags$hr(),
-                             withSpinner(dataTableOutput(outputId = "target_list"), color = "#78C2AD")),
+                             withSpinner(ui_element = dataTableOutput(outputId = "target_list"), 
+                                         color = "#78C2AD")),
                     
                     tabPanel(title = "PRODUCTS",
                              tags$p("Use this tab when you want to recommend additional products on
@@ -89,7 +98,8 @@ sidebarLayout(
                                          label = "Products chosen by the customer", 
                                          choices = "Chosen Products",
                                          multiple = TRUE),
-                             withSpinner(dataTableOutput(outputId = "chosen_recomms"), color = "#78C2AD")),
+                             withSpinner(ui_element = dataTableOutput(outputId = "chosen_recomms"), 
+                                         color = "#78C2AD")),
                     
                     tabPanel(title = "POPULAR",
                              tags$p("These are the most popular products at UAP-OM. It is a good place 
