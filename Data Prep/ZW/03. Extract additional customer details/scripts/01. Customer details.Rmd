@@ -424,7 +424,7 @@ saveRDS(object = customer_details_final,
 saveRDS(product_businesslines,"../outputs/product_businesslines.rds")
 
 # Project image
-save.image("../outputs/22June_Customer_details.RData")
+save.image("../outputs/24June_Customer_details.RData")
 #load("../outputs/17June_Customer_details.RData")
 ```
 

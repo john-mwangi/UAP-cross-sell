@@ -153,7 +153,7 @@ It should be indicated on the app that Account Number is:
 * General Ins: CUSTOMER_NO
 * Life Ins: ACCOUNT_NUMBER
 * Lending: account_no
-* Postilion: ACCOUNT_NUMBER
+* Banking: ACCOUNT_NUMBER
 
 
 # Export
@@ -162,7 +162,7 @@ It should be indicated on the app that Account Number is:
 saveRDS(object = products_rating_matrix, 
         file = "../outputs/products_rating_matrix.rds")
 
-save.image("../outputs/22June_RatingMatrix.RData")
+save.image("../outputs/24June_RatingMatrix.RData")
 #load("./05May_RatingMatrix.RData")
 ```
 
