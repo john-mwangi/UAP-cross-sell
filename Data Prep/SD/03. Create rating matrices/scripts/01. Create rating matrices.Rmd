@@ -22,13 +22,10 @@ library(tidyverse)
 ```{r}
 general_product_holding <-
 readRDS(file = "../../02. Determine product holding/outputs/general_product_holding.rds") %>% 
-  rename(PRODUCT = BUSINESS_TYPE)
+  rename(PRODUCT = POLICY_TYPE)
 
-
-life_product_holding <-
-readRDS(file = "../../02. Determine product holding/outputs/life_product_holding.rds") %>% 
-  rename(ACCOUNT_NO = ACCOUNT_NUMBER,
-         PRODUCT = CONTRACT_GROUP_NAME)
+health_product_holding <- readRDS("../../02. Determine product holding/outputs/health_product_holding.rds") %>% 
+  mutate(ACCOUNT_NO = as.character(ACCOUNT_NO))
 ```
 
 # Merge the tables
@@ -37,9 +34,13 @@ We merge all the tables.
 
 ```{r}
 products_df_raw <-
-rbind(life_product_holding,
-      general_product_holding) %>% 
+  bind_rows(
+  health_product_holding,
+  general_product_holding
+) %>% 
   distinct(ACCOUNT_NO, PRODUCT, .keep_all = TRUE)
+
+unique(products_df_raw$PRODUCT)
 
 products_df_raw
 ```
@@ -101,6 +102,12 @@ length(unique(products_df_raw$ACCOUNT_NO))
 anyNA(products_df)
 ```
 
+```{r}
+products_df %>%
+filter(is.na(ACCOUNT_NO))
+```
+
+
 # Convert to matrix
 
 ```{r}
@@ -141,7 +148,7 @@ dim(products_rating_matrix)
 saveRDS(object = products_rating_matrix, 
         file = "../outputs/products_rating_matrix.rds")
 
-save.image("../outputs/02June_RatingMatrix.RData")
+save.image("../outputs/28June_RatingMatrix.RData")
 #load("./05May_RatingMatrix.RData")
 ```
 

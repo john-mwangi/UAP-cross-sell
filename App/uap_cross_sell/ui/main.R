@@ -14,7 +14,7 @@ sidebarLayout(
     fluidRow(id = "side_panel",
     selectInput(inputId = "country", 
                 label = "Select your country", 
-                choices = c("Kenya","Uganda","Zimbabwe","Nigeria","Ghana"), 
+                choices = c("Kenya","Uganda","Zimbabwe","Nigeria","Ghana","Sudan"), 
                 selected = "Kenya", 
                 multiple = FALSE),
     numericInput(inputId = "recomm_limit", 
@@ -44,20 +44,20 @@ sidebarLayout(
         tabsetPanel(type = "pills",
                     tabPanel(title = "ACCOUNT NO", 
                              tags$p("Use this tab when you already have a customer in mind 
-                                    that you'd want to target and you have their account number.
-                                    Click search to begin or query"),
+                                     that you'd want to target and you have their account number.
+                                     Click search to begin or query"),
                              fluidRow(
                                column(width = 4,
                                       textInput(inputId = "customer_ids", 
                                                 label = "Enter account numbers separated by commas",
-                                                value = "1337,100003,0000013188,3013656028,AG002068,AS000883", 
+                                                value = "1337,100003,0000013188,3013656028,AG002068,AS000883,0000012198,0000012202"", 
                                                 width = "100%")),
                                column(width = 2,
                                       tags$br(),
                                       actionButton(inputId = "acc_search", label = "Search"))),
                              withSpinner(ui_element = dataTableOutput(outputId = "customer_recomms"), 
                                          color = "#78C2AD")),
-                    
+                                      
                     tabPanel(title = "CUSTOMERS",
                              tags$p("Use this tab when you don't have a specific customer in mind but
                                 you want a list of customers who are most likely to make a purchase."),

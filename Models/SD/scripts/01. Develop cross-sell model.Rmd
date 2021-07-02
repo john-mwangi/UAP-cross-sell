@@ -26,7 +26,7 @@ library(tidyverse)
 
 ```{r}
 products_rating_matrix <-
-readRDS(file = "../../../Data Prep/NG/03. Create rating matrices/outputs/products_rating_matrix.rds")
+readRDS(file = "../../../Data Prep/SD/03. Create rating matrices/outputs/products_rating_matrix.rds")
 
 dim(products_rating_matrix)
 ```
@@ -122,42 +122,24 @@ A hybrid recommender will be used since an IBCF recommender on its own does not 
 The hybrid recommender could not be evaluated using the evaluation scheme as the process was taking an extended period of time.
 
 ```{r}
-ng_ibcf = Recommender(data = products_rating_matrix, method = "IBCF")
-ng_pop = Recommender(data = products_rating_matrix, method = "POPULAR")
-ng_hyb <- HybridRecommender(ng_ibcf, ng_pop, weights = c(0.9,0.1))
+sd_ibcf = Recommender(data = products_rating_matrix, method = "IBCF")
+sd_pop = Recommender(data = products_rating_matrix, method = "POPULAR")
+sd_hyb <- HybridRecommender(sd_ibcf, sd_pop, weights = c(0.9,0.1))
 
 # IBCF is not recommending General Products; hybrid recommender will be used.
-ng_rec_model <- ng_hyb
+sd_rec_model <- sd_hyb
 ```
 
 
 ## Extract ratings
-
-### Approach 1
-
-Preferred approach.
-
-```{r eval=FALSE, include=FALSE}
-# Chunk taking too long
-
-ng_recommendations <- 
-  predict(object = ng_rec_model, 
-          newdata = products_rating_matrix, 
-          type = "ratings") %>% 
-  as("data.frame") %>% 
-  rename(ACCOUNT_NO = user,
-         PRODUCT = item)
-
-ng_recommendations
-```
 
 ### Approach 2
 
 Using matrices.
 
 ```{r}
-ng_ibcf_mat <- 
-  predict(object = ng_ibcf,
+sd_ibcf_mat <- 
+  predict(object = sd_ibcf,
           newdata = products_rating_matrix,
           type = "ratings") %>% 
   as("matrix")
@@ -165,8 +147,8 @@ ng_ibcf_mat <-
 
 
 ```{r}
-ng_pop_mat <- 
-  predict(object = ng_pop,
+sd_pop_mat <- 
+  predict(object = sd_pop,
           newdata = products_rating_matrix,
           type = "ratings") %>% 
   as("matrix")
@@ -175,22 +157,22 @@ ng_pop_mat <-
 Replace NAs with zero and obtain hybrid matrix.
 
 ```{r}
-ng_pop_mat[is.na(ng_pop_mat)]=0
-ng_ibcf_mat[is.na(ng_ibcf_mat)]=0
+sd_pop_mat[is.na(sd_pop_mat)]=0
+sd_ibcf_mat[is.na(sd_ibcf_mat)]=0
 
 
-ng_hyb_mat = (ng_ibcf_mat*0.9) + (ng_pop_mat*0.1)
+sd_hyb_mat = (sd_ibcf_mat*0.9) + (sd_pop_mat*0.1)
 ```
 
 
 ```{r}
-ng_hyb_mat[1:2,1:5]
+sd_hyb_mat[1:2,1:5]
 ```
 
 Comparison of results...
 
 ```{r}
-predict(object = zw_hyb, 
+predict(object = sd_hyb, 
         newdata = products_rating_matrix[1:2,], 
         type = "ratings") %>% 
   as("data.frame") %>% 
@@ -200,8 +182,8 @@ predict(object = zw_hyb,
 ### Ratings
 
 ```{r}
-ng_recommendations <-
-ng_hyb_mat %>% 
+sd_recommendations <-
+sd_hyb_mat %>% 
   as.data.frame() %>% 
   rownames_to_column("ACCOUNT_NO") %>%
   pivot_longer(cols = -ACCOUNT_NO,
@@ -209,7 +191,7 @@ ng_hyb_mat %>%
                values_to = "rating") %>% 
   filter(rating != 0)
 
-ng_recommendations
+sd_recommendations
 ```
 
 ## Add business lines
@@ -218,17 +200,17 @@ Add product business lines to ratings.
 
 ```{r}
 product_businesslines <-
-readRDS(file = "../../../Data Prep/NG/04. Extract additional customer details/outputs/product_businesslines.rds")
+readRDS(file = "../../../Data Prep/SD/04. Extract additional customer details/outputs/product_businesslines.rds")
 
 product_businesslines
 ```
 
 ```{r}
-ng_recommendations_proc <-
-ng_recommendations %>%
+sd_recommendations_proc <-
+sd_recommendations %>%
   left_join(product_businesslines, by = "PRODUCT")
 
-ng_recommendations_proc
+sd_recommendations_proc
 ```
 
 
@@ -240,8 +222,8 @@ ng_recommendations_proc
 * Limit to top 5 recommendations per customer per business line
 
 ```{r}
-ng_recommendations_df <-
-ng_recommendations_proc %>% 
+sd_recommendations_df <-
+sd_recommendations_proc %>% 
   group_by(ACCOUNT_NO) %>% 
   mutate(max_rating = max(rating)) %>% 
   arrange(desc(max_rating),
@@ -250,25 +232,25 @@ ng_recommendations_proc %>%
   group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
   slice(1:5)
 
-ng_recommendations_df
+sd_recommendations_df
 ```
 
 ## Add product values
 
 ```{r}
 product_values <-
-readRDS(file = "../../../Data Prep/NG/04. Extract additional customer details/outputs/product_values.rds")
+readRDS(file = "../../../Data Prep/SD/04. Extract additional customer details/outputs/product_values.rds")
 
 product_values
 ```
 
 ```{r}
-ng_recommendations_df_proc <-
-ng_recommendations_df %>% 
+sd_recommendations_df_proc <-
+sd_recommendations_df %>% 
   left_join(product_values, by = c("PRODUCT"="PRODUCT")) %>% 
   select(-accounts)
 
-ng_recommendations_df_proc
+sd_recommendations_df_proc
 ```
 
 
@@ -278,7 +260,7 @@ Merge ratings with customer details.
 
 ```{r}
 customer_details_final <-
-readRDS(file = "../../../Data Prep/NG/04. Extract additional customer details/outputs/customer_details_final.rds") %>% 
+readRDS(file = "../../../Data Prep/SD/04. Extract additional customer details/outputs/customer_details_final.rds") %>% 
   ungroup()
 
 customer_details_final
@@ -288,14 +270,14 @@ customer_details_final
 ```{r}
 table_order <- c("ACCOUNT_NO", "PRODUCT", "BUSINESS_LINE", "rating", "max_rating", "ownership", "intermediated", "product_value", "customer_details")
 
-ng_recommendations_detailed <-
-ng_recommendations_df_proc %>% 
+sd_recommendations_detailed <-
+sd_recommendations_df_proc %>% 
   left_join(customer_details_final, by = "ACCOUNT_NO") %>% 
   relocate(BUSINESS_LINE, .after = PRODUCT) %>% 
   group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
   select(all_of(table_order))
 
-ng_recommendations_detailed
+sd_recommendations_detailed
 ```
 
 # CREATE DATABASE
@@ -307,13 +289,13 @@ Ref: https://www.youtube.com/watch?v=wXEZZ2JT3-k
 ## Database Connection
 
 ```{r}
-ng_sqlite_path <- "../../../App/uap_cross_sell/db/ng_cs.db"
-con_ng <- dbConnect(drv = SQLite(), ng_sqlite_path)
+sd_sqlite_path <- "../../../App/uap_cross_sell/db/sd_cs.db"
+con_sd <- dbConnect(drv = SQLite(), sd_sqlite_path)
 ```
 
 
 ```{r}
-dbListTables(conn = con_ng)
+dbListTables(conn = con_sd)
 ```
 
 ## Database tables
@@ -323,8 +305,8 @@ Create database tables of required data.
 ### Detailed recommendations
 
 ```{r}
-copy_to(dest = con_ng, 
-        df = ng_recommendations_detailed, 
+copy_to(dest = con_sd, 
+        df = sd_recommendations_detailed, 
         name = "recommendations_detailed",
         overwrite = TRUE, 
         temporary = FALSE)
@@ -333,9 +315,9 @@ copy_to(dest = con_ng,
 Compare the two tables...
 
 ```{r}
-dim(ng_recommendations_detailed)
+dim(sd_recommendations_detailed)
 
-tbl(src = con_ng, "recommendations_detailed") %>% 
+tbl(src = con_sd, "recommendations_detailed") %>% 
   collect() %>% 
   dim()
 ```
@@ -344,7 +326,7 @@ tbl(src = con_ng, "recommendations_detailed") %>%
 ### Product business lines
 
 ```{r}
-copy_to(dest = con_ng, 
+copy_to(dest = con_sd, 
         df = product_businesslines, 
         name = "product_businesslines", 
         overwrite = TRUE, 
@@ -355,7 +337,7 @@ copy_to(dest = con_ng,
 ### Product values
 
 ```{r}
-copy_to(dest = con_ng, 
+copy_to(dest = con_sd, 
         df = product_values, 
         name = "product_values", 
         overwrite = TRUE,
@@ -366,12 +348,12 @@ copy_to(dest = con_ng,
 ## Confirm tables
 
 ```{r}
-dbListTables(conn = con_ng)
+dbListTables(conn = con_sd)
 ```
 
 
 ```{r}
-tbl(src = con_ng, "recommendations_detailed")
+tbl(src = con_sd, "recommendations_detailed")
 ```
 
 
@@ -390,8 +372,6 @@ DBI::dbSendQuery(conn = con_zw, statement = q)
 Where you have a customer account number and want to 3 products per business line.
 
 ```{r}
-#sample_cust_num <- paste0(rownames(products_rating_matrix)[1:2], collapse =",")
-#records <- strsplit(x = sample_cust_num, split = ",")[[1]]
 
 records <- sample(x = rownames(products_rating_matrix),
                   size = 2)
@@ -402,7 +382,7 @@ records
 ### Predict
 
 ```{r}
-predict(object = ng_rec_model, 
+predict(object = sd_rec_model, 
         newdata = products_rating_matrix[records,], 
         type = "ratings") %>% 
   as("data.frame") %>% 
@@ -415,7 +395,7 @@ predict(object = ng_rec_model,
 ### Dataframe
 
 ```{r}
-ng_recommendations_detailed %>% 
+sd_recommendations_detailed %>% 
   filter(ACCOUNT_NO %in% records) %>% 
   slice(1:3)
 ```
@@ -425,7 +405,7 @@ ng_recommendations_detailed %>%
 Database replication of the above results.
 
 ```{r}
-tbl(src = con_ng, "recommendations_detailed") %>%
+tbl(src = con_sd, "recommendations_detailed") %>%
   filter(ACCOUNT_NO %in% records) %>%
   group_by(ACCOUNT_NO, BUSINESS_LINE) %>%
   collect() %>% 
@@ -447,7 +427,7 @@ We allow the end-user get the top n recommended customers based on this criteria
 ### Dataframe
 
 ```{r}
-ng_recommendations_detailed %>% 
+sd_recommendations_detailed %>% 
   ungroup() %>% 
   filter(intermediated=="No") %>% 
   count(ownership)
@@ -455,7 +435,7 @@ ng_recommendations_detailed %>%
 
 
 ```{r}
-ng_recommendations_detailed %>% 
+sd_recommendations_detailed %>% 
   filter(intermediated=="No") %>% 
   filter(ownership=="General") %>% 
   filter(product_value>=50000) %>% 
@@ -467,7 +447,7 @@ ng_recommendations_detailed %>%
 ### Database
 
 ```{r}
-tbl(src = con_ng, "recommendations_detailed") %>%
+tbl(src = con_sd, "recommendations_detailed") %>%
   group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
   filter(intermediated=="No") %>% 
   filter(ownership=="General") %>% 
@@ -547,7 +527,7 @@ Recommend products.
 
 ```{r}
 user_choice_recommendations <- 
-  predict(object = ng_rec_model, 
+  predict(object = sd_rec_model, 
           newdata = user_choices_ratmat, 
           type="ratings")
 ```
@@ -598,7 +578,7 @@ user_choices_ratmat <- as(user_choices_mat,"binaryRatingMatrix")
 
  #Predict using model
 user_choice_recommendations <- 
-  predict(object = ng_rec_model, 
+  predict(object = sd_rec_model, 
           newdata = user_choices_ratmat, 
           type="ratings")
 
@@ -651,9 +631,9 @@ popular_products %>%
 Put the results in their own table in the database
 
 ```{r}
-copy_to(dest = con_ng, df = popular_products, overwrite = TRUE, temporary = FALSE)
+copy_to(dest = con_sd, df = popular_products, overwrite = TRUE, temporary = FALSE)
 
-dbListTables(conn = con_ng)
+dbListTables(conn = con_sd)
 ```
 
 ### Database
@@ -661,7 +641,7 @@ dbListTables(conn = con_ng)
 Replicate the above results in SQL
 
 ```{r}
-tbl(src = con_ng, "popular_products") %>%
+tbl(src = con_sd, "popular_products") %>%
   group_by(BUSINESS_LINE) %>% 
   collect() %>% 
   slice(1:3)
@@ -706,7 +686,7 @@ cust_prods_upload
 Recommendations for customer numbers provided.
 
 ```{r}
-ng_recommendations_detailed %>% 
+sd_recommendations_detailed %>% 
   filter(ACCOUNT_NO %in% acc_nums_upload) %>% 
   arrange(desc(max_rating),
           desc(rating), 
@@ -717,7 +697,7 @@ ng_recommendations_detailed %>%
 Replicate the above results in SQL
 
 ```{r}
-tbl(src = con_ng, "recommendations_detailed") %>%
+tbl(src = con_sd, "recommendations_detailed") %>%
   group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
   filter(ACCOUNT_NO %in% acc_nums_upload) %>% 
   collect() %>% 
@@ -743,15 +723,15 @@ predict_on_choices(user_choices = cust_prods_upload, recomm_limit = 3)
 
 ```{r}
 # Project image
-save.image(file = "../outputs/03June_Models.RData")
-#load(file = "../outputs/16May_Models.RData")
+save.image(file = "../outputs/28June_Models.RData")
+# load(file = "../outputs/23June_Models.RData")
 
 # Ojects for deployment
-saveRDS(object = ng_rec_model, 
-        file = "../../../App/uap_cross_sell/objects/models/Nigeria.rds")
+saveRDS(object = sd_rec_model, 
+        file = "../../../App/uap_cross_sell/objects/models/Sudan.rds")
 
-saveRDS(object = ng_recommendations_detailed,
-        file = "../outputs/ng_recommendations_detailed.rds")
+saveRDS(object = sd_recommendations_detailed,
+        file = "../outputs/sd_recommendations_detailed.rds")
 ```
 
 
