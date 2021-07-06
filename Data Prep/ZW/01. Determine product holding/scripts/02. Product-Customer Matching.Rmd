@@ -157,7 +157,7 @@ Check for NA values.
 
 ```{r}
 gi_product_holding %>% 
-  filter(is.na(DESCRIPTION))
+  filter(is.na(PRODUCT))
 ```
 
 
@@ -246,7 +246,7 @@ anyNA(life_product_holding)
 
 Customers with multiple accounts
 
-```{r}
+```{r eval=FALSE, include=FALSE}
 life_product_holding %>% 
   filter(str_detect(string = ACCOUNT_NUMBER, pattern = ","))
 ```
