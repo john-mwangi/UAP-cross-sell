@@ -240,8 +240,6 @@ product_businesslines <-
 readRDS(file = "../../../Data Prep/ZW/03. Extract additional customer details/outputs/product_businesslines.rds")
 
 product_businesslines
-
-dim(products_rating_matrix)
 ```
 
 
@@ -1418,17 +1416,22 @@ predict_on_choices(user_choices = cust_prods_upload, recomm_limit = 3)
 ```{r}
 # Project image
 save.image(file = "../outputs/02July_Models.RData")
-load(file = "../outputs/02July_Models.RData")
+load(file = "../outputs/24June_Models.RData")
 
 # Objects for deployment
 saveRDS(object = zw_rec_model, 
         file = "../../../App/uap_cross_sell/objects/models/Zimbabwe.rds")
 saveRDS(object = products_rating_matrix, 
         file = "../../../App/uap_cross_sell/objects/rating_matrix/Zimbabwe.rds")
-
 saveRDS(object = zw_recommendations_detailed,
         file = "../outputs/zw_recommendations_detailed.rds")
 ```
 
+
+```{r}
+dim(products_rating_matrix)
+
+zw_rec_model
+```
 
 

@@ -6,7 +6,7 @@ fluidPage(
   
 titlePanel(""),
   
-theme = bslib::bs_theme(version = 4, bootswatch = "minty"),
+#theme = bslib::bs_theme(version = 4, bootswatch = "minty"),
 
 sidebarLayout(
   sidebarPanel(width = 2,
