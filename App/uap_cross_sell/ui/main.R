@@ -6,7 +6,7 @@ fluidPage(
   
 titlePanel(""),
   
-theme = bslib::bs_theme(version = 4, bootswatch = "minty"),
+#theme = bslib::bs_theme(version = 4, bootswatch = "minty"),
 
 sidebarLayout(
   sidebarPanel(width = 2,
@@ -50,7 +50,7 @@ sidebarLayout(
                                column(width = 4,
                                       textInput(inputId = "customer_ids", 
                                                 label = "Enter account numbers separated by commas",
-                                                value = "1337,100003,0000013188,3013656028,AG002068,AS000883,0000012198,0000012202"", 
+                                                value = "1337,100003,0000013188,3013656028,AG002068,AS000883", 
                                                 width = "100%")),
                                column(width = 2,
                                       tags$br(),
