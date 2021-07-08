@@ -53,7 +53,7 @@ general_agents
 
 `CUSTOMER_NO` is the customer identifier.
 
-```{r}
+```{r eval=FALSE, include=FALSE}
 life_agents <-
 readRDS(file = "../../02. Determine product holding/outputs/life_products.rds") %>% 
   select(ACCOUNT_NO = ACCOUNT_NUMBER,
@@ -69,12 +69,12 @@ life_agents
 ## Customer agents
 
 ```{r}
-customer_agents <-
-rbind(general_agents, 
-      life_agents) %>% 
-  distinct(ACCOUNT_NO, .keep_all = TRUE)
+# customer_agents <-
+# rbind(general_agents, 
+#       life_agents) %>% 
+#   distinct(ACCOUNT_NO, .keep_all = TRUE)
 
-customer_agents
+customer_agents <- general_agents
 ```
 
 
@@ -123,10 +123,10 @@ customer_products
 Define business lines to which products belong to.
 
 ```{r}
-life_products <-
-readRDS(file = "../../02. Determine product holding/outputs/life_product_holding.rds") %>% 
-  distinct(PRODUCT = CONTRACT_GROUP_NAME) %>% 
-  mutate(BUSINESS_LINE = "Life")
+# life_products <-
+# readRDS(file = "../../02. Determine product holding/outputs/life_product_holding.rds") %>% 
+#   distinct(PRODUCT = CONTRACT_GROUP_NAME) %>% 
+#   mutate(BUSINESS_LINE = "Life")
 
 general_products <-
 readRDS(file = "../../02. Determine product holding/outputs/general_product_holding.rds") %>% 
@@ -136,11 +136,11 @@ readRDS(file = "../../02. Determine product holding/outputs/general_product_hold
 
 
 ```{r}
-product_businesslines <-
-rbind(life_products,
-      general_products)
+# product_businesslines <-
+# rbind(life_products,
+#       general_products)
 
-product_businesslines
+product_businesslines <- general_products
 ```
 
 
@@ -218,7 +218,7 @@ saveRDS(object = customer_details_final,
 saveRDS(product_businesslines,"../outputs/product_businesslines.rds")
 
 # Project image
-save.image("../outputs/02June_Customer_details.RData")
+save.image("../outputs/30June_Customer_details.RData")
 ```
 
 

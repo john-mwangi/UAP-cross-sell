@@ -25,10 +25,10 @@ readRDS(file = "../../02. Determine product holding/outputs/general_product_hold
   rename(PRODUCT = BUSINESS_TYPE)
 
 
-life_product_holding <-
-readRDS(file = "../../02. Determine product holding/outputs/life_product_holding.rds") %>% 
-  rename(ACCOUNT_NO = ACCOUNT_NUMBER,
-         PRODUCT = CONTRACT_GROUP_NAME)
+# life_product_holding <-
+# readRDS(file = "../../02. Determine product holding/outputs/life_product_holding.rds") %>% 
+#   rename(ACCOUNT_NO = ACCOUNT_NUMBER,
+#          PRODUCT = CONTRACT_GROUP_NAME)
 ```
 
 # Merge the tables
@@ -36,9 +36,14 @@ readRDS(file = "../../02. Determine product holding/outputs/life_product_holding
 We merge all the tables.
 
 ```{r}
+# products_df_raw <-
+# rbind(life_product_holding,
+#       general_product_holding) %>% 
+#   distinct(ACCOUNT_NO, PRODUCT, .keep_all = TRUE)
+
+
 products_df_raw <-
-rbind(life_product_holding,
-      general_product_holding) %>% 
+rbind(general_product_holding) %>% 
   distinct(ACCOUNT_NO, PRODUCT, .keep_all = TRUE)
 
 products_df_raw
@@ -141,7 +146,7 @@ dim(products_rating_matrix)
 saveRDS(object = products_rating_matrix, 
         file = "../outputs/products_rating_matrix.rds")
 
-save.image("../outputs/02June_RatingMatrix.RData")
+save.image("../outputs/30June_RatingMatrix.RData")
 #load("./05May_RatingMatrix.RData")
 ```
 
