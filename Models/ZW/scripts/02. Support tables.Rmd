@@ -99,12 +99,11 @@ support_df
 ## Establish db connection
 
 ```{r}
-supp_sqlite_path <- "../../../App/uap_cross_sell/db/support.db"
-con_supp <- dbConnect(drv = RSQLite::SQLite(), supp_sqlite_path)
+supp_path <- "../../../App/uap_cross_sell/db/support.db"
+con_supp <- dbConnect(drv = RSQLite::SQLite(), supp_path)
 
-
+dbListTables(con_supp)
 ```
-
 
 ## Save to db
 
@@ -118,11 +117,17 @@ copy_to(dest = con_supp,
 
 # UPDATES
 
-## Countries in db
+## Establish db connection
 
 ```{r}
-dbListTables(conn = con_supp)
+supp_path <- "../../../App/uap_cross_sell/db/support.db"
+con_supp <- dbConnect(drv = RSQLite::SQLite(), supp_path)
+
+dbListTables(con_supp)
 ```
+
+
+## Countries in db
 
 ```{r}
 tbl(src = con_supp, "support") %>% 
@@ -140,7 +145,8 @@ tbl(src = con_supp, "support") %>%
   filter(country != "Zimbabwe") %>% 
   collect()
 
-support_df
+support_df %>% 
+  distinct(country)
 ```
 
 
@@ -243,6 +249,12 @@ ug_ownership <- readRDS(file = "../../UG/outputs/ug_recommendations_detailed.rds
 ### Zimbabwe
 
 ```{r}
+zw_ownership <-
+  tbl(src = con_zw, "recommendations_detailed") %>% 
+  distinct(ownership) %>% 
+  collect() %>% 
+  pull(ownership)
+
 zw_ownership
 ```
 
@@ -258,13 +270,17 @@ ug_products <- readRDS(file = "../../../Data Prep/UG/product_holding/products_ra
 ### Zimbabwe
 
 ```{r}
-zw_products
+zw_products <-
+  readRDS("../../../Data Prep/ZW/02. Create rating matrices/outputs/products_rating_matrix.rds") %>% 
+  colnames()
+
+length(zw_products)
 ```
 
 
-## Table
+## Country tables
 
-Uganda.
+### Uganda
 
 ```{r}
 ug_tibble <- tibble(
@@ -278,7 +294,8 @@ ug_tibble <- tibble(
 ug_tibble
 ```
 
-Zimbabwe.
+### Zimbabwe
+
 ```{r}
 zw_tibble <- tibble(
     country = "Zimbabwe",
@@ -294,6 +311,8 @@ zw_tibble
 
 ## Update db
 
+### Replace
+
 ```{r}
 copy_to(dest = con_supp, 
         df = support_df, 
@@ -302,13 +321,13 @@ copy_to(dest = con_supp,
         temporary = FALSE)
 ```
 
-Uganda.
+### Uganda
 
 ```{r}
 dbWriteTable(con = con_supp, "support", ug_tibble, append=TRUE, row.names = FALSE)
 ```
 
-Zimbabwe.
+### Zimbabwe
 
 ```{r}
 dbWriteTable(conn = con_supp, 
@@ -316,10 +335,17 @@ dbWriteTable(conn = con_supp,
              value = zw_tibble, 
              append=TRUE, 
              row.names = FALSE)
+
+tbl(src = con_supp, "support") %>% 
+  filter(country=="Zimbabwe")
+
+
+tbl(src = con_supp, "support") %>% 
+  distinct(country)
 ```
 
 
-Ghana.
+### Ghana
 
 ```{r}
 copy_to(dest = con_supp,
