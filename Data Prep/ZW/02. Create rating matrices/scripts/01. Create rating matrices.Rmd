@@ -22,16 +22,16 @@ library(tidyverse)
 # Import Data
 
 ```{r}
-asset_product_holding <- readRDS(file = "../../01. Determine product holding/outputs/objects/asset_product_holding.rds")
+holding_paths <-
+dir(path = "../../01. Determine product holding/outputs/objects/", 
+    pattern = "holding.rds", 
+    all.files = FALSE, 
+    full.names = TRUE, 
+    ignore.case = TRUE)
 
-gi_product_holding <- readRDS(file = "../../01. Determine product holding/outputs/objects/gi_product_holding.rds")
-
-life_product_holding <- readRDS(file = "../../01. Determine product holding/outputs/objects/life_product_holding.rds")
-
-lending_product_holding <- readRDS("../../01. Determine product holding/outputs/objects/lending_product_holding.rds")
-
-banking_product_holding <- readRDS("../../01. Determine product holding/outputs/objects/banking_product_holding.rds")
+holding_paths
 ```
+
 
 # Merge the tables
 
@@ -39,11 +39,8 @@ Ensure customer-product combination is unique across the subsidiary.
 
 ```{r}
 products_df_raw_query <-
-rbind(asset_product_holding,
-      life_product_holding,
-      gi_product_holding,
-      lending_product_holding,
-      banking_product_holding) %>% 
+map_df(.x = holding_paths, 
+       .f = list(readRDS,rbind)) %>% 
   lazy_dt() %>% 
   group_by(UNIQUE_ID) %>% 
   mutate(ACCOUNT_NO = paste0(unique(ACCOUNT_NO), collapse = ",")) %>% 
@@ -70,6 +67,7 @@ products_df_raw %>%
   count(UNIQUE_ID) %>% 
   summary()
 ```
+
 
 ```{r eval=FALSE, include=FALSE}
 purchase_dist <-
@@ -162,7 +160,7 @@ It should be indicated on the app that Account Number is:
 saveRDS(object = products_rating_matrix, 
         file = "../outputs/products_rating_matrix.rds")
 
-save.image("../outputs/24June_RatingMatrix.RData")
+save.image("../outputs/08July_RatingMatrix.RData")
 #load("./05May_RatingMatrix.RData")
 ```
 

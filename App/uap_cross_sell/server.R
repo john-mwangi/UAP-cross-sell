@@ -219,12 +219,15 @@ shinyServer(function(input, output, session) {
     
     #Convert to a table
     choices <- 
-      tibble(choice = rep(x = c(1,0), times = c(length(user_choices), length(not_user_choices))
+      tibble(choice = rep(x = c(1,0), 
+                          times = c(length(user_choices), 
+                                    length(not_user_choices))
       ))
     
     user_choices_df <-
       choices %>% 
-      mutate(user_choices = c(user_choices, not_user_choices))
+      mutate(user_choices = c(user_choices, not_user_choices)) %>% 
+      distinct(user_choices, .keep_all = TRUE)
     
     #Convert to wide format
     user_choices_df <- 
@@ -271,7 +274,7 @@ shinyServer(function(input, output, session) {
     
     if (input$country=="Zimbabwe"){
       return(list(recommendations=predict_on_accounts(account_num = input$customer_ids,
-                                                      recomm_limit = 3)))
+                                                      recomm_limit = input$recomm_limit)))
     }
     
     else {

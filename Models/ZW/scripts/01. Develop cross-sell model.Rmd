@@ -15,6 +15,7 @@ rm(list = ls())
 library(doParallel)
 library(arrow)
 library(sparklyr)
+library(data.table)
 library(dtplyr)
 library(recommenderlab)
 library(DBI)
@@ -175,6 +176,7 @@ zw_pop_mat <-
 
 
 ```{r}
+# Sourced from Google Colab
 zw_pop_mat <- readRDS(file = "../outputs/zw_pop_mat.rds")
 
 dim(zw_pop_mat)
@@ -227,37 +229,76 @@ zw_hyb_mat %>%
                values_to = "rating") %>% 
   filter(rating > 0)
 
-zw_recommendations
+dim(zw_recommendations)
+head(zw_recommendations)
 ```
+
+```{r}
+write_parquet(zw_recommendations,"../outputs/parquets/zw_recommendations.parquet")
+```
+
+
+## APACHE SPARK
+
+Because we're working with a very large number of records, we will leverage Apache Spark to perform all computations on lazy tables and lazy queries and only execute the final query to a save results in a Postgres database.
+
+Apache Spark with Postgres backend. This has the speed of Apache and persistency of Postgres. Perform all operations on lazy tables and queries in Spark and only copy final results to Postgres.
+
+
+```{r}
+# Absolute path to connector
+config <- spark_config()
+config$`sparklyr.shell.driver-class-path` <- "E:\\Softwares\\postgresql-42.2.22.jar"
+```
+
+
+```{r}
+try(expr = spark_disconnect(sc = sc))
+
+sc <- spark_connect(master = "local", config = config)
+```
+
 
 ## Add business lines
 
 Add product business lines to ratings.
 
 ```{r}
+zw_recommendations <-
+spark_read_parquet(sc = sc,
+                   name = "zw_recommendations",
+                   path = "../outputs/parquets/zw_recommendations.parquet",
+                   overwrite = TRUE)
+
+class(zw_recommendations)
+```
+
+
+```{r}
 product_businesslines <-
 readRDS(file = "../../../Data Prep/ZW/03. Extract additional customer details/outputs/product_businesslines.rds")
 
 product_businesslines
-
-dim(products_rating_matrix)
 ```
+
+
+```{r}
+product_businesslines <-
+copy_to(dest = sc,
+        df = product_businesslines,
+        name = "product_businesslines",
+        overwrite = TRUE)
+
+class(product_businesslines)
+```
+
 
 ```{r}
 zw_recommendations_proc <-
 zw_recommendations %>%
   left_join(product_businesslines, by = "PRODUCT")
 
-zw_recommendations_proc
-```
-
-```{r eval=FALSE, include=FALSE}
-gc()
-
-# copy_to(dest = sc, df = zw_recommendations_proc, overwrite = TRUE, temporary = FALSE, memory = FALSE)
-
-write_parquet(x = zw_recommendations_proc, sink = "../outputs/zw_recommendations_proc.parquet")
-
+class(zw_recommendations_proc)
 ```
 
 ## Add max rating, arrange
@@ -280,287 +321,16 @@ zw_recommendations_proc %>%
   slice(1:5)
 ```
 
-Replicate the above in SQL.
 
-Because `slice()` is not implemented yet, well design a workaround in SQL using `RANK()`:
+Replicate the above in SQL. Because `slice()` is not implemented yet, well design a workaround in SQL using `RANK()`:
 * Group the dataframe as required
-* Add a rank column
+* Add a rank column using `row_number()`
 * Filter top 5 by rank
-
-### Approach 1
-
-Create data prep SQLite database. The problem with this is that it creates a very huge database of 7 GB compared with the same parquet file of <300 MB. Also, it gives a disk full error.
-
-```{r}
-zw_dataprep_db <- "../outputs/zw_dataprep.db"
-con_prep <- dbConnect(drv = RSQLite::SQLite(), zw_dataprep_db)
-```
-
-Chunk and pull into an SQLite database
-
-```{r}
-zw_recs_proc_path <- "../outputs/parquets/zw_recommendations_proc.parquet"
-
-pq <- ParquetFileReader$create(file = zw_recs_proc_path)
-
-pq$GetSchema()
-pq$num_row_groups
-```
-
-
-```{r}
-doParallel::registerDoParallel(cores = 2)
-zw_recs_proc_path <- "../outputs/parquets/zw_recommendations_proc.parquet"
-zw_recommendations_proc <- read_parquet(file = zw_recs_proc_path)
-doParallel::stopImplicitCluster()
-```
-
-
-```{r}
-doParallel::registerDoParallel(cores = 2)
-copy_to(dest = con_prep, df = zw_recommendations_proc, name = "zw_recommendations_proc", overwrite = TRUE, temporary = FALSE)
-doParallel::stopImplicitCluster()
-```
-
-
-```{r}
-dbListTables(conn = con_prep)
-
-rm(zw_recommendations_proc)
-```
-
-
-```{r}
-zw_recommendations_df_query <-
-tbl(src = con_prep, "zw_recommendations_proc") %>% 
-  head(1000) %>% 
-  group_by(UNIQUE_ID) %>% 
-  mutate(max_rating = max(rating)) %>% 
-  arrange(desc(max_rating),
-          desc(rating), .by_group = TRUE) %>% 
-  ungroup() %>%
-  group_by(UNIQUE_ID, BUSINESS_LINE) %>%
-  mutate(rank = row_number()) %>% 
-  filter(rank <= 5)
-```
-
-
-```{r}
-doParallel::registerDoParallel(cores = 2)
-copy_to(dest = con_prep, df = zw_recommendations_df_query, name = "zw_recommendations_df", overwrite = TRUE, temporary = FALSE)
-doParallel::stopImplicitCluster()
-```
-
-### Approach 2
-
-Using spark and saving the results to a parquet file. Out of memory issues.
-
-```{r}
-spark_installed_versions()
-```
-
-Set configurations. Useful links for avoiding out of memory errors: 
-* [Config options](https://spark.rstudio.com/deployment/#collect)
-* [Default settings](https://spark.apache.org/docs/latest/configuration.html)
-* [A working config](https://stackoverflow.com/questions/41384336/running-out-of-heap-space-in-sparklyr-but-have-plenty-of-memory)
-
-```{r}
-# This retrieves default spark settings and allows us to update with our own
-Sys.setenv("SPARK_MEM" = "500g")
-
-config <- spark_config()
-config$spark.driver.maxResultSize <- "500g"
-config$spark.driver.memory <- "500g"
-config$spark.executor.memory <- "500g"
-config$`sparklyr.shell.driver-memory` <- "8g"
-```
-
-Configurations
-
-```{r}
-spark_config()
-
-config
-
-
-class(spark_config())
-
-class(config)
-
-#config::get()
-```
-
-Create spark connection. Reconnect to load new settings and confirm them.
-
-```{r}
-spark_disconnect(sc = sc)
-
-sc <- spark_connect(master = "local", config = config)
-
-sc
-```
-
-Read parquet file into spark database. Use parallel processing until the end since we'll be working with long operations.
-
-```{r}
-registerDoParallel(cores = 2)
-
-spark_read_parquet(sc = sc, name = "zw_recommendations_proc", path = "../outputs/parquets/zw_recommendations_proc.parquet")
-
-dbListTables(conn = sc)
-```
-
-Prepare SQL query.
-
-```{r}
-zw_recommendations_df_query <-
-tbl(src = sc, "zw_recommendations_proc") %>% 
-  group_by(UNIQUE_ID) %>% 
-  mutate(max_rating = max(rating)) %>% 
-  arrange(desc(max_rating),
-          desc(rating), .by_group = TRUE) %>% 
-  ungroup() %>%
-  group_by(UNIQUE_ID, BUSINESS_LINE) %>%
-  mutate(rank = row_number()) %>% 
-  filter(rank <= 5)
-
-class(zw_recommendations_df_query)
-```
-
-Using compute to create the table remotely
-
-```{r}
-compute(x = zw_recommendations_df_query, name = "zw_recommendations_df", overwrite = TRUE)
-
-dbListTables(conn = sc)
-```
-Execute SQL query. Collect fails collecting the table into memory regardless of the settings.
-
-```{r eval=FALSE, include=FALSE}
-gc()
-
-rm(zw_recommendations_df)
-
-zw_recommendations_df <- zw_recommendations_df_query %>% 
-  collect()
-
-class(zw_recommendations_df)
-dim(zw_recommendations_df)
-```
-
-Collect vectors into memory works.
-
-```{r}
-df_BUSINESS_LINE <- 
-  tbl(src = sc, "zw_recommendations_df") %>% 
-  select(BUSINESS_LINE) %>% 
-  collect()
-```
-
-
-```{r}
-saveRDS(object = df_UNIQUE_ID, file = "../outputs/df_UNIQUE.rds")
-```
-
-
-### Approach 3
-
-Analyse data in Postgres database. Queries taking too long to execute.
-
-```{r}
-con_prep <- dbConnect(drv = RPostgres::Postgres(), user = "postgres", password = "john", dbname = "zw_dataprep")
-
-dbListTables(conn = con_prep)
-```
-
-Create table in Postgres.
-
-```{r}
-# gc()
-# 
-# registerDoParallel(cores = 2)
-# 
-# copy_to(dest = con_prep, df = zw_recommendations_proc, name = "zw_recommendations_proc", overwrite = TRUE, temporary = FALSE)
-# 
-# dbListTables(conn = con_prep)
-# 
-# stopImplicitCluster()
-```
-
-
-```{r}
-zw_recommendations_df_query <-
-tbl(src = con_prep, "zw_recommendations_proc") %>% 
-  group_by(UNIQUE_ID) %>% 
-  mutate(max_rating = max(rating)) %>%
-  arrange(desc(max_rating),
-          desc(rating), .by_group = TRUE) %>% 
-  ungroup() %>%
-  group_by(UNIQUE_ID, BUSINESS_LINE) %>%
-  mutate(rank = row_number()) %>% 
-  filter(rank <= 5)
-
-class(zw_recommendations_df_query)
-
-zw_recommendations_df_query %>% 
-  show_query()
-```
-
-Execute SQL to create table remotely.
-
-```{r}
-registerDoParallel(cores = 2)
-
-compute(x = zw_recommendations_df_query, name = "zw_recommendations_df", temporary = FALSE, overwrite = TRUE) %>% 
-  show_query()
-
-dbListTables(conn = con_prep)
-
-stopImplicitCluster()
-```
-
-
-### Approach 4
-
-Apache Spark with Postgres backend. This has the speed of Apache and persistency of Postgres. Perform all operations on lazy tables and only copy final results to Postgres.
-
-```{r}
-spark_installed_versions()
-```
-
-
-
-```{r}
-config <- spark_config()
-config$`sparklyr.shell.driver-class-path` <- "E:\\Softwares\\postgresql-42.2.22.jar"
-```
-
-
-```{r}
-sc <- spark_connect(master = "local", config = config)
-
-sc
-```
-
-
-Read parquet into Hadoop.
-
-```{r}
-gc()
-
-registerDoParallel(cores = 2)
-
-zw_recommendations_proc <- spark_read_parquet(sc = sc, path = "../outputs/parquets/zw_recommendations_proc.parquet")
-
-class(zw_recommendations_proc)
-
-stopImplicitCluster()
-```
 
 Perform SQL operations on the lazy table.
 
 ```{r}
-zw_recommendations_df_query <-
+zw_recommendations_df <-
   zw_recommendations_proc %>% 
   group_by(UNIQUE_ID) %>% 
   mutate(max_rating = max(rating)) %>% 
@@ -571,14 +341,11 @@ zw_recommendations_df_query <-
   mutate(rank = row_number()) %>% 
   filter(rank <= 5)
 
-class(zw_recommendations_df_query)
+class(zw_recommendations_df)
 ```
 
-* Perform all operations on lazy tables and only copy the final results to Postgres.
 
-### CONTINUE
-
-
+Perform all operations on lazy tables and only copy the final results to Postgres.
 
 Write table from Hadoop into Postgres.
 
@@ -586,7 +353,7 @@ Useful links:
 * https://github.com/sparklyr/sparklyr/issues/1067
 * https://therinspark.com/data.html#jdbc
 
-```{r}
+```{r eval=FALSE, include=FALSE}
 gc()
 
 registerDoParallel(cores = 2)
@@ -601,89 +368,61 @@ spark_write_jdbc(x = zw_recommendations_df_query,
 stopImplicitCluster()
 ```
 
+
 Read table from Postgres to Hadoop.
 
-```{r}
+
+```{r eval=FALSE, include=FALSE}
+# Not used. Taking too long. A parquet file was used instead.
+
+registerDoParallel(cores = 2)
+
 spark_read_jdbc(sc = sc, 
-                name = "test1", 
+                name = "zw_recommendations_df", 
                 options = list(url = "jdbc:postgresql://localhost:5432/zw_dataprep",
                                user = "postgres",
                                password = "john",
-                               dbtable = "test2"))
+                               dbtable = "zw_recommendations_df"))
+
+stopImplicitCluster()
 ```
-
-
-
-
-
-
 
 
 ## Add product values
 
+
 ```{r}
-product_values <-
-readRDS(file = "../../../Data Prep/ZW/03. Extract additional customer details/outputs/product_values.rds")
+product_values <- readRDS(file = "../../../Data Prep/ZW/03. Extract additional customer details/outputs/product_values.rds")
 
 product_values
 ```
 
 
-```{r eval=FALSE, include=FALSE}
+```{r}
+product_values <- 
+  copy_to(dest = sc,
+          df = product_values,
+          name = "product_values",
+          overwrite = TRUE,
+          temporary = FALSE)
+
+class(product_values)
+```
+
+
+```{r}
 zw_recommendations_df_proc <-
 zw_recommendations_df %>% 
-  left_join(product_values, by = "PRODUCT") %>% 
-  select(-accounts)
+  left_join(product_values, by = "PRODUCT")
 
-zw_recommendations_df_proc
-```
-
-
-Replicate the above operation in spark
-
-```{r}
-spark_read_parquet(sc = sc, name = "zw_recommendations_df", path = "../outputs/parquets/zw_recommendations_df.parquet")
-
-dbListTables(conn = sc)
-
-zw_recommendations_df_proc <-
-tbl(src = sc, "zw_recommendations_df") %>% 
-  left_join(product_values, by = "PRODUCT") %>% 
-  select(-accounts)
-
-zw_recommendations_df_proc
-```
-
-
-## Add customer details & grouping
-
-Merge ratings with customer details.
-
-```{r}
-customer_details_final <-
-readRDS(file = "../../../Data Prep/ZW/03. Extract additional customer details/outputs/customer_details_final.rds")
-
-customer_details_final
-```
-
-
-```{r}
-table_order <- c("UNIQUE_ID", "PRODUCT", "BUSINESS_LINE", "rating", "max_rating", "ownership", "intermediated", "product_value", "customer_details")
-
-zw_recommendations_unique_id <-
-zw_recommendations_df_proc %>% 
-  left_join(customer_details_final, by = "UNIQUE_ID") %>% 
-  relocate(BUSINESS_LINE, .after = PRODUCT) %>% 
-  group_by(UNIQUE_ID, BUSINESS_LINE) %>% 
-  select(all_of(table_order))
-
-zw_recommendations_unique_id
+class(zw_recommendations_df_proc)
 ```
 
 
 ## Add Accounts
 
 Add all Account Numbers associated with each Unique ID
+
 
 ```{r}
 holding_paths <-
@@ -702,37 +441,251 @@ holding_paths %>%
 uniqueid_accounts
 ```
 
+Convert to lazy query.
+
+```{r}
+uniqueid_accounts <-
+  copy_to(dest = sc,
+          df = uniqueid_accounts,
+          name = "uniqueid_accounts",
+          overwrite = TRUE,
+          temporary = FALSE)
+
+class(uniqueid_accounts)
+```
+
+
+```{r}
+zw_recommendations_unique_id <-
+zw_recommendations_df_proc %>%
+  left_join(uniqueid_accounts, by = "UNIQUE_ID") %>%
+  relocate(ACCOUNT_NO, .after = UNIQUE_ID) %>% 
+  ungroup() %>%
+  group_by(ACCOUNT_NO, BUSINESS_LINE)
+
+class(zw_recommendations_unique_id)
+```
+
+Save results to directly to Postgres database for next steps.
+
+```{r}
+registerDoParallel(cores = detectCores())
+
+spark_write_jdbc(x = zw_recommendations_unique_id, 
+                 name = "zw_recommendations_unique_id", 
+                 mode = "overwrite",
+                 options = list(url = "jdbc:postgresql://localhost:5432/zw_dataprep",
+                                user = "postgres",
+                                password = "john"))
+
+stopImplicitCluster()
+```
+
+
+## POSTGRES
+
+This is a database created to analyse and store data preparation results. Spark has challenges handling glued columns.
+
+
+## Add customer details & grouping
+
+
+```{r}
+con_prep <- dbConnect(drv = RPostgres::Postgres(), 
+                      user = "postgres", 
+                      password = "john", 
+                      dbname = "zw_dataprep")
+
+dbListTables(conn = con_prep)
+```
+
+Merge ratings with customer details.
+
+```{r}
+customer_details_final <-
+readRDS(file = "../../../Data Prep/ZW/03. Extract additional customer details/outputs/customer_details_final.rds")
+
+customer_details_final
+```
+
+
+```{r}
+customer_details_final <-
+  copy_to(dest = con_prep,
+          df = customer_details_final,
+          name = "customer_details_final",
+          temporary = FALSE,
+          overwrite = TRUE)
+
+class(customer_details_final)
+```
+
+Move zw_recommendations_unique_id to Postgres database.
+
+```{r}
+class(zw_recommendations_unique_id)
+class(customer_details_final)
+```
+
+Create Postgre lazy query
+
+```{r}
+zw_recommendations_unique_id <- tbl(src = con_prep, "zw_recommendations_unique_id")
+```
+
+
+```{r}
+class(zw_recommendations_unique_id)
+class(customer_details_final)
+```
+
+Arrange the table.
 
 ```{r}
 zw_recommendations_detailed <-
 zw_recommendations_unique_id %>% 
-  left_join(uniqueid_accounts, by = "UNIQUE_ID") %>%
-  relocate(ACCOUNT_NO, .after = UNIQUE_ID) %>% 
-  ungroup() %>%
-  group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
-  select(-UNIQUE_ID)
+  left_join(customer_details_final, by = "UNIQUE_ID") %>% 
+  relocate(BUSINESS_LINE, .after = PRODUCT) %>% 
+  arrange(desc(max_rating), 
+          ACCOUNT_NO, 
+          BUSINESS_LINE, 
+          desc(rating)) %>% 
+  group_by(UNIQUE_ID, BUSINESS_LINE)
 
-zw_recommendations_detailed
+class(zw_recommendations_detailed)
 ```
+
+Execute results to remote database. This is faster than `copy_to()`
+
+```{r}
+registerDoParallel(cores = detectCores())
+
+try(dbRemoveTable(conn = con_prep, name = "zw_recommendations_detailed"))
+
+compute(x = zw_recommendations_detailed,
+        name = "zw_recommendations_detailed",
+        temporary = FALSE)
+
+stopImplicitCluster()
+```
+
+
+```{r}
+zw_recommendations_detailed <-
+tbl(src = con_prep, "zw_recommendations_detailed") %>% 
+  collect()
+
+dim(zw_recommendations_detailed)
+```
+
+
+Write to parquet file
+
+```{r}
+write_parquet(x = zw_recommendations_detailed,
+              sink = "../outputs/parquets/zw_recommendations_detailed.parquet")
+```
+
 
 ## Sense check
 
-Customers with National IDs having multiple Account Numbers.
+Check if all 715K customers are in the database. Checking also for NA values.
 
 ```{r}
-uniqueid_accounts %>% 
-  filter(str_detect(string = ACCOUNT_NO, pattern = ","))
+anyNA(zw_recommendations_detailed)
 ```
 
-Confirm the above results.
 
 ```{r}
+rec_accounts <- 
+  tbl(src = con_prep, "zw_recommendations_detailed") %>%
+  distinct(UNIQUE_ID, ACCOUNT_NO)
+
+class(rec_accounts)
+```
+
+
+```{r}
+try(dbRemoveTable(conn = con_prep, name = "UNIQUE_IDs"))
+
+compute(x = rec_accounts,
+        name = "rec_accounts",
+        temporary = FALSE)
+```
+
+
+```{r}
+rec_accounts <-
+  tbl(src = con_prep, "rec_accounts") %>% 
+  collect()
+```
+
+If we exclude NA accounts, we get our original 715K. Are these UNIQUE_IDs with NAs already assigned account numbers?
+
+```{r}
+rec_accounts %>% 
+  filter(is.na(ACCOUNT_NO))
+
+
+rec_accounts %>% 
+  filter(!is.na(ACCOUNT_NO)) %>% 
+  dim()
+```
+
+```{r}
+# without account no
+rec_accounts %>% 
+  filter(is.na(ACCOUNT_NO))
+  pull(UNIQUE_ID)
+
+
+# with account no
+rec_accounts %>% 
+  filter(!is.na(ACCOUNT_NO)) %>% 
+  pull(UNIQUE_ID)
+
+
+length(
+intersect(x = rec_accounts %>% 
+              filter(is.na(ACCOUNT_NO)) %>% 
+              pull(UNIQUE_ID),
+          
+          y = rec_accounts %>% 
+              filter(!is.na(ACCOUNT_NO)) %>% 
+              pull(UNIQUE_ID))
+)
+```
+
+```{r}
+zw_recommendations_detailed <- tbl(src = con_prep, "zw_recommendations_detailed")
+```
+
+Filter out NA Account Numbers.
+
+```{r}
+recommendations_detailed <-
 zw_recommendations_detailed %>% 
-  ungroup() %>% 
-  distinct(ACCOUNT_NO) %>% 
-  filter(str_detect(string = ACCOUNT_NO, pattern = ","))
+  filter(!is.na(ACCOUNT_NO))
+
+class(recommendations_detailed)
 ```
 
+
+```{r}
+recommendations_detailed_df <-
+  recommendations_detailed %>% 
+  collect()
+
+length(unique(recommendations_detailed_df$UNIQUE_ID))
+```
+
+
+Write parquet file.
+
+```{r}
+write_parquet(x = zw_recommendations_detailed,
+              sink = "../outputs/parquets/zw_recommendations_detailed.parquet")
+```
 
 
 # CREATE DATABASE
@@ -760,12 +713,63 @@ Create database tables of required data.
 ### Detailed recommendations
 
 ```{r}
-copy_to(dest = con_zw, 
-        df = zw_recommendations_detailed, 
-        name = "recommendations_detailed",
-        overwrite = TRUE, 
-        temporary = FALSE)
+table_order <- c("ACCOUNT_NO", "PRODUCT", "BUSINESS_LINE", "rating", "max_rating", "ownership", "intermediated", "product_value", "customer_details")
+
+zw_recommendations_detailed_df <-
+zw_recommendations_detailed %>% select(all_of(table_order))
+
+anyNA(zw_recommendations_detailed_df)
+zw_recommendations_detailed_df
 ```
+
+```{r}
+zw_recommendations_detailed_df %>%
+  head(1000) %>% 
+  arrange(desc(max_rating)) %>% 
+  arrange(ACCOUNT_NO,
+          BUSINESS_LINE,
+          desc(rating))
+```
+
+
+
+```{r}
+zw_recommendations_detailed_sorted <-
+zw_recommendations_detailed_df %>%
+  lazy_dt() %>% 
+  arrange(desc(max_rating)) %>% 
+  arrange(ACCOUNT_NO,
+          BUSINESS_LINE,
+          desc(rating))
+
+class(zw_recommendations_detailed_sorted)
+```
+
+
+```{r}
+zw_recommendations_detailed_sorted <- zw_recommendations_detailed_sorted %>% as.data.table()
+
+zw_recommendations_detailed_sorted
+```
+
+
+```{r}
+registerDoParallel(cores = detectCores())
+
+copy_to(dest = con_zw,
+        df = zw_recommendations_detailed_sorted,
+        name = "recommendations_detailed",
+        overwrite = TRUE,
+        temporary = FALSE)
+
+stopImplicitCluster()
+```
+
+
+```{r}
+tbl(src = con_zw, "recommendations_detailed")
+```
+
 
 Compare the two tables...
 
@@ -1299,17 +1303,85 @@ return(user_choice_recommendations_df)
 }
 ```
 
+### Database
+
+Test SQL implementation
 
 ```{r}
-predict_on_choices(user_choices = user_choices,
-                   recomm_limit = 3)
+
+
+predict_on_choices_db <- function(user_choices, recomm_limit){
+  
+    #Products not selected
+    not_user_choices <-
+      tbl(src = con_supp, "support") %>% 
+      filter(country=="Zimbabwe") %>% 
+      filter(!products %in% user_choices & !is.na(products)) %>%
+      collect() %>% 
+      pull(products)
+    
+    
+    #Convert to a table
+    choices <- 
+      tibble(choice = rep(x = c(1,0), 
+                          times = c(length(user_choices), 
+                                    length(not_user_choices))
+      ))
+    
+    user_choices_df <-
+      choices %>% 
+      mutate(user_choices = c(user_choices, not_user_choices)) %>% 
+      distinct(user_choices, .keep_all = TRUE)
+    
+    #Convert to wide format
+    user_choices_df <- 
+      pivot_wider(data = user_choices_df,
+                  names_from = user_choices, 
+                  values_from = choice)
+    
+    #Convert to binaryRatingMatrix
+    user_choices_mat <- as.matrix(user_choices_df)
+    user_choices_ratmat <- as(user_choices_mat,"binaryRatingMatrix")
+    
+    #Predict using model
+    user_choice_recommendations <-
+      tryCatch(expr = predict(object = zw_rec_model, 
+                      newdata = user_choices_ratmat, 
+                      type="ratings"),
+               error = function(e){
+                 stop("Ensure the products specified match the selected country.")
+               })
+    
+    #Convert prediction to dataframe
+    user_choice_recommendations_df <-
+      as(user_choice_recommendations, "data.frame") %>% 
+      rename(PRODUCT = item) %>%
+      left_join(tbl(src = con_zw, "product_businesslines") %>% collect(),
+                by = "PRODUCT") %>% 
+      left_join(tbl(src = con_zw, "product_values") %>% collect(),
+                by = "PRODUCT") %>% 
+      relocate(BUSINESS_LINE, .after = PRODUCT) %>% 
+      group_by(BUSINESS_LINE) %>% 
+      arrange(desc(rating), .by_group = TRUE) %>% 
+      slice(1:recomm_limit) %>% 
+      select(-accounts) %>% 
+      mutate(rating = round(rating, 3)) %>% 
+      rename(value = product_value) %>% 
+      setNames(str_to_upper(colnames(.)))
+    
+    return(user_choice_recommendations_df)
+  }
+```
+
+
+```{r}
+predict_on_choices_db(user_choices = user_choices,
+                      recomm_limit = 3)
 ```
 
 ## Scenario 4
 
 A table of the most popular products.
-
-Comment: If you examine Account Number vs Products for Health vs Asset Mgt, Asset Mgt has 54K records, while Health Insurance has 18K records.
 
 ### Dataframe
 
@@ -1409,17 +1481,22 @@ predict_on_choices(user_choices = cust_prods_upload, recomm_limit = 3)
 ```{r}
 # Project image
 save.image(file = "../outputs/02July_Models.RData")
-#load(file = "../outputs/24June_Models.RData")
+load(file = "../outputs/24June_Models.RData")
 
 # Objects for deployment
 saveRDS(object = zw_rec_model, 
         file = "../../../App/uap_cross_sell/objects/models/Zimbabwe.rds")
 saveRDS(object = products_rating_matrix, 
         file = "../../../App/uap_cross_sell/objects/rating_matrix/Zimbabwe.rds")
-
 saveRDS(object = zw_recommendations_detailed,
         file = "../outputs/zw_recommendations_detailed.rds")
 ```
 
+
+```{r}
+dim(products_rating_matrix)
+
+zw_rec_model
+```
 
 
