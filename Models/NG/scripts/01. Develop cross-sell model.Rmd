@@ -760,7 +760,7 @@ predict_on_choices(user_choices = cust_prods_upload, recomm_limit = 3)
 ```{r}
 # Project image
 save.image(file = "../outputs/30June_Models.RData")
-#load(file = "../outputs/03June_Models.RData")
+#load(file = "../outputs/30June_Models.RData")
 
 # Ojects for deployment
 saveRDS(object = ng_rec_model, 
