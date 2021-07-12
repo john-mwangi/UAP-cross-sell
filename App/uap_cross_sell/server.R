@@ -149,7 +149,7 @@ shinyServer(function(input, output, session) {
     updateSelectInput(session = session, inputId = "chosen_products", choices = products_update)
   })
   
-  ### ZW predict function ======
+  ### Predict function ======
   predict_on_accounts <- function(account_num, recomm_limit){
     table_order <- c("UNIQUE_ID", "PRODUCT", "BUSINESS_LINE", "rating", "max_rating", "ownership", "intermediated", "product_value", "customer_details")
     
@@ -179,11 +179,16 @@ shinyServer(function(input, output, session) {
     cust_unique_ids <- res_tbl %>% pull(UNIQUE_ID)
     
     # Predict & merge
+    country_preds <-
+    tryCatch(expr = predict(object = readRDS(paste0("./objects/models/",input$country,".rds")),
+                            newdata = readRDS(paste0("./objects/rating_matrix/",input$country,".rds"))[cust_unique_ids,],
+                            type = "ratings"),
+             error = function(e){
+               stop("Account number does not exist.")
+             })
+    
     user_account_recommendations <-
-      predict(object = readRDS(paste0("./objects/models/",input$country,".rds")),
-              newdata = readRDS(paste0("./objects/rating_matrix/",input$country,".rds"))[cust_unique_ids,],
-              type = "ratings") %>% 
-      as("data.frame") %>% 
+      as(country_preds, "data.frame") %>% 
       rename(UNIQUE_ID = user, PRODUCT = item) %>% 
       left_join(tbl(src = db_con()$con, "product_businesslines"), by = "PRODUCT", copy = TRUE) %>% 
       left_join(tbl(src = db_con()$con, "uniqueid_accounts"), by = "UNIQUE_ID", copy = TRUE) %>% 
@@ -363,6 +368,10 @@ shinyServer(function(input, output, session) {
       pull(PRODUCT)
     
     # Recommendations using uploaded customer numbers
+    if (input$country=="Zimbabwe"){
+      acc_upload <- predict_on_accounts(account_num = acc_nums_upload,
+                                        recomm_limit = input$recomm_limit)
+    } else {
     acc_upload <-
       tbl(src = db_con()$con, "recommendations_detailed") %>%
       filter(ACCOUNT_NO %in% acc_nums_upload) %>%
@@ -376,6 +385,7 @@ shinyServer(function(input, output, session) {
       rename(inter = intermediated,
              value = product_value) %>% 
       setNames(str_to_upper(colnames(.)))
+    }
     
     # Recommendations using uploaded product names
     user_choices_up <- cust_prods_upload
