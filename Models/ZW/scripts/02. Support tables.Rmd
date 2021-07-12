@@ -123,7 +123,11 @@ copy_to(dest = con_supp,
 supp_path <- "../../../App/uap_cross_sell/db/support.db"
 con_supp <- dbConnect(drv = RSQLite::SQLite(), supp_path)
 
+supp_tayo <- "../../../App/uap_cross_sell/db/support_tayo.db"
+con_tayo <- dbConnect(drv = RSQLite::SQLite(), supp_tayo)
+
 dbListTables(con_supp)
+dbListTables(con_tayo)
 ```
 
 
@@ -134,6 +138,18 @@ tbl(src = con_supp, "support") %>%
   distinct(country)
 ```
 
+## Extract up to date info
+
+### Sudan
+
+```{r}
+sd_tibble <-
+tbl(src = con_tayo, "support") %>% 
+  filter((country=="Sudan")) %>%
+  collect()
+
+sd_tibble
+```
 
 ## Remove outdated info
 
@@ -228,8 +244,8 @@ path_ng <- "../../../App/uap_cross_sell/db/ng_cs.db"
 con_ng <- dbConnect(drv = RSQLite::SQLite(), path_ng)
 dbListTables(conn = con_ng)
 
-ng_ownership <- tbl(src = con_ng, "recommendations_detailed") %>% 
-  distinct(ownership) %>% 
+ng_ownership <- tbl(src = con_ng, "recommendations_detailed") %>%
+  distinct(ownership) %>%
   pull(ownership)
 
 ng_ownership
@@ -260,6 +276,20 @@ zw_ownership
 
 ## Products
 
+### Nigeria
+
+```{r}
+ng_products <-
+readRDS(file = "../../../Data Prep/NG/03. Create rating matrices/outputs/products_rating_matrix.rds") %>% 
+  colnames()
+
+ng_products
+
+# write_csv(x = tibble(ng_products),
+#           file = "../../../Models/NG/outputs/valid_product_names.csv")
+```
+
+
 ### Uganda
 
 ```{r}
@@ -275,6 +305,8 @@ zw_products <-
   colnames()
 
 length(zw_products)
+
+#write_csv(tibble(zw_products),"../../../Models/ZW/outputs/valid_product_names.csv")
 ```
 
 
@@ -355,6 +387,19 @@ copy_to(dest = con_supp,
         temporary = FALSE)
 ```
 
+
+### Sudan
+
+```{r}
+dbWriteTable(conn = con_supp,
+             name = "support", 
+             value = sd_tibble, 
+             append = TRUE, 
+             row.names = FALSE)
+
+tbl(src = con_supp, "support") %>% 
+  filter(country=="Sudan")
+```
 
 # Sense check
 

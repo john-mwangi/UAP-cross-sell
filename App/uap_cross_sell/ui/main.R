@@ -50,7 +50,7 @@ sidebarLayout(
                                column(width = 4,
                                       textInput(inputId = "customer_ids", 
                                                 label = "Enter account numbers separated by commas",
-                                                value = "1337,100003,0000013188,3013656028,AG002068,AS000883", 
+                                                value = "1418,AG002068,0000012198,0000013188,1125981741,3013656028", 
                                                 width = "100%")),
                                column(width = 2,
                                       tags$br(),
@@ -119,12 +119,15 @@ sidebarLayout(
                              tags$hr(),
                              tags$h6("PRODUCT NAMES"),
                              tags$p("Recommendations based on product names provided will appear here."),
-                             dataTableOutput(outputId = "products_upload"),
+                             withSpinner(ui_element = dataTableOutput(outputId = "products_upload"),
+                                         color = "#78C2AD"),
                              tags$hr(),
                              tags$h6("ACCOUNT NUMBERS"),
                              tags$p("Recommendations based on account numbers provided will appear here."),
                              #textOutput(outputId = "checks"),
-                             dataTableOutput(outputId = "accounts_upload")))
+                             withSpinner(ui_element = dataTableOutput(outputId = "accounts_upload"), 
+                                         color = "#78C2AD")
+                             ))
         )
       )
     ))
