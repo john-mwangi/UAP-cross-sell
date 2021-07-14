@@ -30,7 +30,7 @@ sidebarLayout(
       id = "main",
       column(
         12,
-        tags$h3("UAP-OM Cross Selling Tool"),
+        tags$h3("Cross Selling Tool"),
         tags$button(
           id = "submit_sign_out",
           type = "button",
