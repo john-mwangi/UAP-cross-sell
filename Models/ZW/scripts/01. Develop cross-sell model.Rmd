@@ -436,9 +436,27 @@ uniqueid_accounts <-
 holding_paths %>% 
   map_dfr(.f = readRDS) %>% 
   select(UNIQUE_ID, ACCOUNT_NO) %>% 
-  distinct(UNIQUE_ID, .keep_all = TRUE)
+  distinct(UNIQUE_ID, ACCOUNT_NO, .keep_all = TRUE)
+
+# Check
+uniqueid_accounts %>% 
+  filter(str_detect(UNIQUE_ID,"aa4436b5c9b1d24ee8b3edebf8dff415f6cb1297081fc7d9db38e8fc6aae6697"))
+```
+
+Merge all account numbers from different business lines belonging to the same unique id together.
+
+```{r}
+uniqueid_accounts <-
+uniqueid_accounts %>% 
+  group_by(UNIQUE_ID) %>% 
+  mutate(ACCOUNT_NO = paste0(ACCOUNT_NO, collapse = ",")) %>% 
+  slice(1) %>% 
+  ungroup()
 
 uniqueid_accounts
+
+uniqueid_accounts %>% 
+  filter(UNIQUE_ID=="aa4436b5c9b1d24ee8b3edebf8dff415f6cb1297081fc7d9db38e8fc6aae6697")
 ```
 
 Convert to lazy query.
@@ -459,9 +477,7 @@ class(uniqueid_accounts)
 zw_recommendations_unique_id <-
 zw_recommendations_df_proc %>%
   left_join(uniqueid_accounts, by = "UNIQUE_ID") %>%
-  relocate(ACCOUNT_NO, .after = UNIQUE_ID) %>% 
-  ungroup() %>%
-  group_by(ACCOUNT_NO, BUSINESS_LINE)
+  relocate(ACCOUNT_NO, .after = UNIQUE_ID)
 
 class(zw_recommendations_unique_id)
 ```
@@ -560,7 +576,7 @@ Execute results to remote database. This is faster than `copy_to()`
 ```{r}
 registerDoParallel(cores = detectCores())
 
-try(dbRemoveTable(conn = con_prep, name = "zw_recommendations_detailed"))
+try(expr = dbRemoveTable(conn = con_prep, name = "zw_recommendations_detailed"))
 
 compute(x = zw_recommendations_detailed,
         name = "zw_recommendations_detailed",
@@ -569,6 +585,7 @@ compute(x = zw_recommendations_detailed,
 stopImplicitCluster()
 ```
 
+Write to parquet file
 
 ```{r}
 zw_recommendations_detailed <-
@@ -577,9 +594,6 @@ tbl(src = con_prep, "zw_recommendations_detailed") %>%
 
 dim(zw_recommendations_detailed)
 ```
-
-
-Write to parquet file
 
 ```{r}
 write_parquet(x = zw_recommendations_detailed,
@@ -592,99 +606,18 @@ write_parquet(x = zw_recommendations_detailed,
 Check if all 715K customers are in the database. Checking also for NA values.
 
 ```{r}
-anyNA(zw_recommendations_detailed)
-```
+length(unique(zw_recommendations_detailed$UNIQUE_ID))
 
+length(unique(zw_recommendations_detailed$ACCOUNT_NO))
 
-```{r}
-rec_accounts <- 
-  tbl(src = con_prep, "zw_recommendations_detailed") %>%
-  distinct(UNIQUE_ID, ACCOUNT_NO)
-
-class(rec_accounts)
-```
-
-
-```{r}
-try(dbRemoveTable(conn = con_prep, name = "UNIQUE_IDs"))
-
-compute(x = rec_accounts,
-        name = "rec_accounts",
-        temporary = FALSE)
-```
-
-
-```{r}
-rec_accounts <-
-  tbl(src = con_prep, "rec_accounts") %>% 
-  collect()
-```
-
-If we exclude NA accounts, we get our original 715K. Are these UNIQUE_IDs with NAs already assigned account numbers?
-
-```{r}
-rec_accounts %>% 
-  filter(is.na(ACCOUNT_NO))
-
-
-rec_accounts %>% 
-  filter(!is.na(ACCOUNT_NO)) %>% 
-  dim()
+map(.x = zw_recommendations_detailed, .f = anyNA)
 ```
 
 ```{r}
-# without account no
-rec_accounts %>% 
-  filter(is.na(ACCOUNT_NO))
-  pull(UNIQUE_ID)
-
-
-# with account no
-rec_accounts %>% 
-  filter(!is.na(ACCOUNT_NO)) %>% 
-  pull(UNIQUE_ID)
-
-
-length(
-intersect(x = rec_accounts %>% 
-              filter(is.na(ACCOUNT_NO)) %>% 
-              pull(UNIQUE_ID),
-          
-          y = rec_accounts %>% 
-              filter(!is.na(ACCOUNT_NO)) %>% 
-              pull(UNIQUE_ID))
-)
-```
-
-```{r}
-zw_recommendations_detailed <- tbl(src = con_prep, "zw_recommendations_detailed")
-```
-
-Filter out NA Account Numbers.
-
-```{r}
-recommendations_detailed <-
+# Check
 zw_recommendations_detailed %>% 
-  filter(!is.na(ACCOUNT_NO))
-
-class(recommendations_detailed)
-```
-
-
-```{r}
-recommendations_detailed_df <-
-  recommendations_detailed %>% 
-  collect()
-
-length(unique(recommendations_detailed_df$UNIQUE_ID))
-```
-
-
-Write parquet file.
-
-```{r}
-write_parquet(x = zw_recommendations_detailed,
-              sink = "../outputs/parquets/zw_recommendations_detailed.parquet")
+  filter(UNIQUE_ID=="aa4436b5c9b1d24ee8b3edebf8dff415f6cb1297081fc7d9db38e8fc6aae6697") %>% 
+  head(1)
 ```
 
 
@@ -718,7 +651,6 @@ table_order <- c("ACCOUNT_NO", "PRODUCT", "BUSINESS_LINE", "rating", "max_rating
 zw_recommendations_detailed_df <-
 zw_recommendations_detailed %>% select(all_of(table_order))
 
-anyNA(zw_recommendations_detailed_df)
 zw_recommendations_detailed_df
 ```
 
@@ -770,15 +702,11 @@ stopImplicitCluster()
 tbl(src = con_zw, "recommendations_detailed")
 ```
 
-
-Compare the two tables...
-
 ```{r}
-dim(zw_recommendations_detailed)
-
-tbl(src = con_zw, "recommendations_detailed") %>% 
-  collect() %>% 
-  dim()
+# Check
+zw_recommendations_detailed %>% 
+  filter(UNIQUE_ID=="aa4436b5c9b1d24ee8b3edebf8dff415f6cb1297081fc7d9db38e8fc6aae6697") %>% 
+  head(1)
 ```
 
 
@@ -1481,7 +1409,7 @@ predict_on_choices(user_choices = cust_prods_upload, recomm_limit = 3)
 ```{r}
 # Project image
 save.image(file = "../outputs/02July_Models.RData")
-load(file = "../outputs/24June_Models.RData")
+#load(file = "../outputs/02July_Models.RData")
 
 # Objects for deployment
 saveRDS(object = zw_rec_model, 

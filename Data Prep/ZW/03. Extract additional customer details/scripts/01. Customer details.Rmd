@@ -192,7 +192,9 @@ as(products_rating_matrix, "data.frame") %>%
   count(user, name = "product_count") %>% 
   rename(UNIQUE_ID = user)
 
-product_count
+# Check
+product_count %>% 
+  filter(str_detect(UNIQUE_ID,"aa4436b5c9b1d24ee8b3edebf8dff415f6cb1297081fc7d9db38e8fc6aae6697"))
 ```
 
 
@@ -321,7 +323,9 @@ rbind(readRDS(file = "../../01. Determine product holding/outputs/objects/asset_
   select(UNIQUE_ID, ACCOUNT_NO, BUSINESS_LINE) %>% 
   distinct(UNIQUE_ID, BUSINESS_LINE, .keep_all = TRUE)
 
-account_businesslines
+# Check
+account_businesslines %>% 
+  filter(str_detect(UNIQUE_ID,"aa4436b5c9b1d24ee8b3edebf8dff415f6cb1297081fc7d9db38e8fc6aae6697"))
 ```
 
 Summarise customer details by the business line.
@@ -347,6 +351,10 @@ account_summaries
 ```{r}
 account_summaries %>% 
   filter(UNIQUE_ID=="107793")
+
+
+account_summaries %>% 
+  filter(str_detect(string = businessline_details, pattern = "1125337966"))
 ```
 
 ## Account info
@@ -392,6 +400,10 @@ account_info %>%
 
 account_info %>% 
   filter(ownership=="Life, Lending")
+
+
+account_info %>% 
+  filter(str_detect(UNIQUE_ID,"aa4436b5c9b1d24ee8b3edebf8dff415f6cb1297081fc7d9db38e8fc6aae6697"))
 ```
 
 
@@ -426,7 +438,7 @@ saveRDS(product_businesslines,"../outputs/product_businesslines.rds")
 
 # Project image
 save.image("../outputs/08July_Customer_details.RData")
-#load("../outputs/17June_Customer_details.RData")
+load("../outputs/08July_Customer_details.RData")
 ```
 
 
