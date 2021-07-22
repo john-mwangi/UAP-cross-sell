@@ -2,9 +2,9 @@
 Recommender system for UAP to support cross-selling initiatives.
 
 # How to run the tool
-1. Install RStudio and R
+1. Install RStudio and R (4.0.2)
 2. Clone the repo
-3. Install packages listed in server.R and main.R
+3. In RStudio, run `renv::restore()` to restore the package library
 4. Download country databases and place them in `\App\uap_cross_sell\db\`
 5. In RStudio, open the file `\App\uap_cross_sell\server.R` and click "Run app"
 
