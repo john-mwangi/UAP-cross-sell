@@ -1,7 +1,0 @@
-*.*
-!*.r
-!*.rmd
-!*.js
-*.RData
-*.rds
-*.csv
