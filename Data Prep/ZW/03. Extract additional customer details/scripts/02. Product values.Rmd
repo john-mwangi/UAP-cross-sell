@@ -42,7 +42,8 @@ Purchases are top-ups after Creation.
 asset_statements <-
 read.csv(
   file = "../../../../../../C - Documentation/Data/festus_extraction/ZW/statement_investment.csv",
-  sep = ";")
+  sep = ";") %>% 
+  mutate(TRANSACTION_DATE = ymd(TRANSACTION_DATE))
 
 asset_statements %>% 
   filter(AMOUNT > 0) %>% 
@@ -55,7 +56,6 @@ asset_statements %>%
 ```{r}
 asset_products <-
 asset_statements %>% 
-  mutate(TRANSACTION_DATE = ymd(TRANSACTION_DATE)) %>% 
   filter(AMOUNT > 0) %>% 
   filter(TRANSACTION_DATE >= "2018-01-01") %>% 
   filter(TRANSACTION_TYPE_DETAIL %in% c("Creation","Stock Creation")) %>% 
