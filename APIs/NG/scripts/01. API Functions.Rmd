@@ -1,0 +1,490 @@
+---
+title: "ZW APIs"
+author: "John Mwangi"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# ABOUT
+
+This is the main file for creating, documenting, and testing the development process of the APIs.
+
+# Packages
+
+```{r message=FALSE, warning=FALSE}
+rm(list = ls())
+
+library(httr)
+library(jsonlite)
+library(recommenderlab)
+library(DBI)
+library(RSQLite)
+library(tidyverse)
+```
+
+# Required objects
+
+```{r}
+ng_rec_model <- readRDS(file = "../../../App/uap_cross_sell/objects/models/Nigeria.rds")
+```
+
+# Database connections
+
+```{r}
+ng_sqlite_path <- "../../../App/uap_cross_sell/db/ng_cs.db"
+con_ng <- dbConnect(drv = SQLite(), ng_sqlite_path)
+```
+
+# Constants
+
+```{r}
+ROUND_OFF <- 3
+```
+
+# Scenario 1
+
+Where the Account Number is provided, the model returns:
+* Product recommendations for the customer
+* Ratings for the various products
+
+Returns:
+* dataframe converted to json
+
+Additional information (same columns that are on the tool):
+* Business line of the product
+* Max rating among the products
+* Customer ownership
+* Whether the customer is intermediated or not
+* Product value of the recommended product
+* Additional customer details: product holding, products held, account numbers per business line
+
+## Create a function
+
+```{r}
+predict_on_accounts <- function(account_num, recomm_limit){
+  
+  account_num <- str_remove_all(string = account_num, pattern = " ")
+  records <- strsplit(x = account_num, split = ",")[[1]]
+  
+  chosen_customers <-
+    tbl(src = con_ng, "recommendations_detailed") %>% 
+    filter(ACCOUNT_NO %in% records) %>%
+    group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
+    arrange(desc(rating)) %>% 
+    collect() %>% 
+    slice(1:recomm_limit) %>% 
+    arrange(desc(max_rating)) %>% 
+    mutate(max_rating = round(max_rating, ROUND_OFF),
+           rating = round(rating, ROUND_OFF))
+  
+  return(chosen_customers)
+}
+```
+
+## Test the function
+
+```{r}
+predict_on_accounts(account_num = "3013460492,3013483433", recomm_limit = 3)
+```
+
+## Create API
+
+Refer to `predict_on_accounts_api.R` When run, this will return a json file.
+
+## Test API results
+
+View json file in tabular format.
+
+```{r}
+fromJSON(txt = "../outputs/response_scenario1.json")
+```
+
+## Run API
+
+Refer to `run_predict_on_accounts.R` This will prevent the API's port from changing and allow it to be ran as a background job.
+
+Run `run_predict_on_accounts.R` as a job.
+
+## Call the API
+
+Send a http call to the API. The request to this call should have status 200.
+
+```{r}
+base_url <- "http://127.0.0.1:6208/predict-on-accounts"
+
+params <- list(account_num = "3013460492,3013483433", recomm_limit = 3)
+
+query_url <- modify_url(url = base_url, query = params)
+
+request <- GET(url = query_url)
+
+response <- content(x = request, as = "text", encoding = "utf-8")
+
+fromJSON(txt = response)
+```
+
+Convert call to a function.
+
+```{r}
+api_call_1 <- function(account_num, recomm_limit){
+  
+  base_url <- "http://127.0.0.1:6208/predict-on-accounts"
+  
+  params <- list(account_num = account_num, recomm_limit = recomm_limit)
+  
+  query_url <- modify_url(url = base_url, query = params)
+  
+  request <- GET(url = query_url)
+  
+  response <- content(x = request, as = "text", encoding = "utf-8")
+  
+  fromJSON(txt = response)
+}
+```
+
+
+```{r}
+api_call_1(account_num = "3013460492,3013483433", recomm_limit = 3)
+```
+
+# Scenario 2
+
+## Create a function
+
+The function returns a list of prospective customers based on selected user criteria.
+
+```{r}
+fetch_top_customers <- function(ownership, intermediated, min_value, max_value, recomm_limit){
+  
+top_customers <-
+tbl(src = con_ng, "recommendations_detailed") %>%
+  group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
+  filter(intermediated == !!intermediated) %>% 
+  filter(ownership == !!ownership) %>% 
+  filter(product_value >= min_value) %>% 
+  filter(product_value <= max_value) %>% 
+  collect() %>% 
+  slice(1:recomm_limit)
+
+return(top_customers)
+}
+```
+
+## Test the function.
+
+```{r}
+fetch_top_customers(ownership = "General", 
+                    intermediated = "No", 
+                    min_value = 0000, 
+                    max_value = 200000, 
+                    recomm_limit = 3)
+```
+
+## Create API
+
+Refer to `fetch_top_customers.R` When run, this will return a json file.
+
+## Test API results
+
+View json file in tabular format.
+
+```{r}
+fromJSON(txt = "../outputs/response_scenario2.json")
+```
+
+## Run API
+
+Refer to `run_fetch_top_customers.R` This will prevent the API's port from changing and allow it to be ran as a background job.
+
+Run `run_fetch_top_customers.R` as a job.
+
+## Call the API
+
+Send a http call to the API. The request to this call should have status 200.
+
+```{r}
+base_url <- "http://127.0.0.1:6209/fetch-top-customers"
+
+params <- list(ownership = "General", 
+               intermediated = "No", 
+               min_value = 50000, 
+               max_value = 200000, 
+               recomm_limit = 3)
+
+query_url <- modify_url(url = base_url, query = params)
+
+request <- GET(url = query_url)
+
+response <- content(x = request, as = "text", encoding = "utf-8")
+
+fromJSON(txt = response)
+```
+
+Convert call to a function.
+
+```{r}
+api_call_2 <- function(ownership, intermediated, min_value, max_value, recomm_limit){
+  
+  base_url <- "http://127.0.0.1:6208/fetch-top-customers"
+  
+  params <- list(ownership = ownership, 
+                 intermediated = intermediated, 
+                 min_value = min_value, 
+                 max_value = max_value, 
+                 recomm_limit = recomm_limit)
+  
+  query_url <- modify_url(url = base_url, query = params)
+  
+  request <- GET(url = query_url)
+  
+  response <- content(x = request, as = "text", encoding = "utf-8")
+  
+  fromJSON(txt = response)
+}
+```
+
+
+```{r}
+api_call_2(ownership = "General", 
+           intermediated = "No", 
+           min_value = 50000, 
+           max_value = 200000, 
+           recomm_limit = 3)
+```
+
+# Scenario 3
+
+Include additional products on top of what one has purchased.
+
+## Create a function
+
+
+```{r}
+supp_sqlite_path <- "../../../App/uap_cross_sell/db/support.db"
+con_supp <- dbConnect(drv = SQLite(), supp_sqlite_path)
+```
+
+
+
+```{r}
+predict_on_choices <- function(user_choices, recomm_limit){
+    
+    #Products not selected
+    not_user_choices <-
+      tbl(src = con_supp, "support") %>% 
+      filter(country=="Nigeria") %>% 
+      filter(!products %in% user_choices & !is.na(products)) %>%
+      collect() %>% 
+      pull(products)
+    
+    
+    #Convert to a table
+    choices <- 
+      tibble(choice = rep(x = c(1,0), 
+                          times = c(length(user_choices), 
+                                    length(not_user_choices))
+      ))
+    
+    user_choices_df <-
+      choices %>% 
+      mutate(user_choices = c(user_choices, not_user_choices)) %>% 
+      distinct(user_choices, .keep_all = TRUE)
+    
+    #Convert to wide format
+    user_choices_df <- 
+      pivot_wider(data = user_choices_df,
+                  names_from = user_choices, 
+                  values_from = choice)
+    
+    #Convert to binaryRatingMatrix
+    user_choices_mat <- as.matrix(user_choices_df)
+    user_choices_ratmat <- as(user_choices_mat,"binaryRatingMatrix")
+    
+    #Predict using model
+    user_choice_recommendations <-
+      tryCatch(expr = predict(object = ng_rec_model, 
+                      newdata = user_choices_ratmat, 
+                      type="ratings"),
+               error = function(e){
+                 stop("Ensure the products specified match the selected country.")
+               })
+    
+    #Convert prediction to dataframe
+    user_choice_recommendations_df <-
+      as(user_choice_recommendations, "data.frame") %>% 
+      rename(PRODUCT = item) %>%
+      left_join(tbl(src = con_ng, "product_businesslines"),
+                by = "PRODUCT", 
+                copy = TRUE) %>% 
+      left_join(tbl(src = con_ng, "product_values"),
+                by = "PRODUCT",
+                copy = TRUE) %>% 
+      relocate(BUSINESS_LINE, .after = PRODUCT) %>% 
+      group_by(BUSINESS_LINE) %>% 
+      arrange(desc(rating), .by_group = TRUE) %>% 
+      slice(1:recomm_limit) %>% 
+      select(-accounts) %>% 
+      mutate(rating = round(rating, ROUND_OFF))
+    
+    return(user_choice_recommendations_df)
+}
+```
+
+## Test the function
+
+```{r}
+predict_on_choices(user_choices = "Goods in transit", recomm_limit = 3)
+```
+
+## Create API
+
+Refer to `predict_on_choices_api.R` When run, this will return a json file.
+
+## Test API results
+
+View json file in tabular format.
+
+```{r}
+fromJSON(txt = "../outputs/response_scenario3.json")
+```
+
+## Run API
+
+Refer to `run_predict_on_choices.R` This will prevent the API's port from changing and allow it to be ran as a background job.
+
+Run `run_predict_on_choices.R` as a job.
+
+## Call the API
+
+Send a http call to the API. The request to this call should have status 200.
+
+```{r}
+base_url <- "http://127.0.0.1:6211/predict-on-choices"
+
+params <- list(user_choices = "Goods in transit", recomm_limit = 3)
+
+query_url <- modify_url(url = base_url, query = params)
+
+request <- GET(url = query_url)
+
+response <- content(x = request, as = "text", encoding = "utf-8")
+
+fromJSON(txt = response)
+```
+
+Convert call to a function.
+
+```{r}
+api_call_3 <- function(user_choices, recomm_limit){
+  
+  base_url <- "http://127.0.0.1:6211/predict-on-choices"
+  
+  params <- list(user_choices = "Goods in transit", recomm_limit = 3)
+  
+  query_url <- modify_url(url = base_url, query = params)
+  
+  request <- GET(url = query_url)
+  
+  response <- content(x = request, as = "text", encoding = "utf-8")
+  
+  fromJSON(txt = response)
+}
+```
+
+
+```{r}
+api_call_3(user_choices = "Goods in transit", recomm_limit = 3)
+```
+
+
+# Scenario 4
+
+Popular products
+
+## Create a function
+
+```{r}
+fetch_popular_products <- function(recomm_limit){
+
+popular_products <-
+    left_join(x = tbl(src = con_ng, "popular_products"),
+              y = tbl(src = con_ng, "product_values"),
+              by = "PRODUCT") %>% 
+      group_by(BUSINESS_LINE) %>% 
+      collect() %>% 
+      slice(1:recomm_limit) %>% 
+      rename(PURCHASES = n) %>% 
+      select(-accounts)
+
+return(popular_products)
+}
+```
+
+## Test the function
+
+```{r}
+fetch_popular_products(recomm_limit = 4)
+```
+
+## Create API
+
+Refer to `fetch_popular_products_api.R` When run, this will return a json file.
+
+## Test API results
+
+View json file in tabular format.
+
+```{r}
+fromJSON(txt = "../outputs/response_scenario1.json")
+```
+
+## Run API
+
+Refer to `run_predict_on_accounts.R` This will prevent the API's port from changing and allow it to be ran as a background job.
+
+Run `run_predict_on_accounts.R` as a job.
+
+## Call the API
+
+Send a http call to the API. The request to this call should have status 200.
+
+```{r}
+base_url <- "http://127.0.0.1:6210/fetch-popular-products"
+
+params <- list(recomm_limit = 4)
+
+query_url <- modify_url(url = base_url, query = params)
+
+request <- GET(url = query_url)
+
+response <- content(x = request, as = "text", encoding = "utf-8")
+
+fromJSON(txt = response)
+```
+
+Convert call to a function.
+
+```{r}
+api_call_4 <- function(recomm_limit){
+  
+  base_url <- "http://127.0.0.1:6208/fetch-popular-products"
+  
+  params <- list(recomm_limit = recomm_limit)
+  
+  query_url <- modify_url(url = base_url, query = params)
+  
+  request <- GET(url = query_url)
+  
+  response <- content(x = request, as = "text", encoding = "utf-8")
+  
+  fromJSON(txt = response)
+}
+```
+
+
+```{r}
+api_call_4(recomm_limit = 4)
+```
+
