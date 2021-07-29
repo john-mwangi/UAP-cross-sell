@@ -9,9 +9,9 @@ ROUND_OFF <- 3
 
 shinyServer(function(input, output, session) {
   
-  ##======== FIREBASE AUTHENTICATION============
+  # FIREBASE AUTHENTICATION============
   
-  ##### Switch Views ------------------
+  ## Switch Views ------------------
   # if user click link to register, go to register view
   observeEvent(input$go_to_register, {
     shinyjs::show("register_panel", anim = TRUE, animType = "fade")
@@ -48,9 +48,7 @@ shinyServer(function(input, output, session) {
   }, ignoreNULL = FALSE)
   
   
-  
-  
-  # Signed in user --------------------
+  ## Signed in user ====
   # the `session$userData$current_user()` reactiveVal will hold information about the user
   # that has signed in through Firebase.  A value of NULL will be used if the user is not
   # signed in
@@ -59,14 +57,13 @@ shinyServer(function(input, output, session) {
   # input$sof_auth_user comes from front end js in "www/sof-auth.js"
   observeEvent(input$sof_auth_user, {
     
-    # set the signed in user
+  # set the signed in user
     session$userData$current_user(input$sof_auth_user)
     
   }, ignoreNULL = FALSE)
   
   
-  
-  ##### App for signed in user
+  # App for signed in user
   signed_in_user_df <- reactive({
     req(session$userData$current_user())
     
@@ -95,8 +92,8 @@ shinyServer(function(input, output, session) {
   observeEvent(eventExpr = input$submit_sign_out,{dbDisconnect(conn = db_con()$con)})
   
   
-  ##====== As soon as as user logs in successfully:
-  ### Create db connection =====================
+  # DB CONNECTIONS ====
+  # As soon as a user logs in successfully
   ke_sqlite_path <- "./db/ke_cs.db"
   zw_sqlite_path <- "./db/zw_cs.db"
   ug_sqlite_path <- "./db/ug_cs.db"
@@ -128,7 +125,7 @@ shinyServer(function(input, output, session) {
   })
   
   
-  ###==============UPDATE UI ELEMENTS==========
+  # DYNAMIC DROPDOWNS ====
   observe({
     ownership_update <- 
       tbl(src = con_supp, "support") %>% 
@@ -149,7 +146,9 @@ shinyServer(function(input, output, session) {
     updateSelectInput(session = session, inputId = "chosen_products", choices = products_update)
   })
   
-  ### Predict function ======
+  # PREDICT FUNCTIONS ====
+  ## ZW Scenario 1 ====
+  
   predict_on_accounts <- function(account_num, recomm_limit){
     table_order <- c("UNIQUE_ID", "PRODUCT", "BUSINESS_LINE", "rating", "max_rating", "ownership", "intermediated", "product_value", "customer_details")
     
@@ -210,7 +209,7 @@ shinyServer(function(input, output, session) {
     return(user_account_recommendations)
   }
   
-  ### Function for predicting using products ================
+  ## Scenario 3 ====
   predict_on_choices <- function(user_choices, recomm_limit){
     
     #Products not selected
@@ -274,7 +273,10 @@ shinyServer(function(input, output, session) {
   }
   
   
-  ###============== REACTIVES========
+  # REACTIVES ====
+  # These are event listeners
+  
+  ## Scenario 1 ====
   dfScenario1 = eventReactive(input$acc_search, {
     
     if (input$country=="Zimbabwe"){
@@ -305,11 +307,11 @@ shinyServer(function(input, output, session) {
     
   }})
 
-  
-  dfScenario2 = reactive({
+  ## Scenario 2 ====
+  dfScenario2 = eventReactive(input$top_cust, {
     
-    # Limit to 1000 records due to performance
-    filtered_customers <-
+    # Limit to 1000 records due to performance challenges
+    top_customers <-
     tbl(src = db_con()$con, "recommendations_detailed") %>% 
       group_by(ACCOUNT_NO, BUSINESS_LINE) %>% 
       filter(intermediated==!!input$intermediated) %>% 
@@ -328,10 +330,11 @@ shinyServer(function(input, output, session) {
              value = product_value) %>% 
       setNames(str_to_upper(colnames(.)))
     
-    return(list(recommendations=filtered_customers))
+    return(list(recommendations=top_customers))
     
   })
   
+  ## Scenario 3 ====
   dfScenario3 = reactive({
     
     if(input$submit>0){
@@ -345,6 +348,27 @@ shinyServer(function(input, output, session) {
   })
   
   
+  ## Scenario 4 ====
+  
+  dfScenario4 = reactive({
+    
+    popular_products <-
+    left_join(x = tbl(src = db_con()$con, "popular_products"),
+              y = tbl(src = db_con()$con, "product_values"),
+              by = "PRODUCT") %>% 
+      group_by(BUSINESS_LINE) %>% 
+      collect() %>% 
+      slice(1:input$recomm_limit) %>% 
+      rename(PURCHASES = n) %>% 
+      select(-accounts) %>% 
+      rename(value = product_value) %>% 
+      setNames(str_to_upper(colnames(.)))
+    
+    return(list(recommendations=popular_products))
+    
+  })
+  
+  ## Scenario 5 ====
   dfScenario5 = reactive({
     
     # Prevent reactive from executing unless a file is uploaded
@@ -400,9 +424,10 @@ shinyServer(function(input, output, session) {
   
   
   
-  ##=======OUTPUTS==============
+  # OUTPUTS ====
+  # These are functions for rendering tables
   
-  # #Scenario 1 output
+  ## Scenario 1 ====
   output$customer_recomms <- renderDataTable(server = FALSE,
                                              rownames = FALSE,
                                              extensions = "Buttons",
@@ -418,7 +443,7 @@ shinyServer(function(input, output, session) {
                                                               dfScenario1()$recommendations
                                                             })
   
-  #Scenario 2 output
+  ## Scenario 2 ====
   output$target_list <- renderDataTable(server = FALSE,
                                         rownames = FALSE,
                                         extensions = "Buttons",
@@ -435,7 +460,7 @@ shinyServer(function(input, output, session) {
                                                        }
   )
   
-  #Scenario 3 output
+  ## Scenario 3 ====
   output$chosen_recomms <- renderDataTable(server = FALSE,
                                            rownames = FALSE,
                                            extensions = "Buttons",
@@ -444,26 +469,19 @@ shinyServer(function(input, output, session) {
                                                             dfScenario3()$recommendations
                                                           })
   
-  #Scenario 4 output
+  ## Scenario 4 ====
   output$popular_products <- renderDT(server = FALSE,
                                       rownames = FALSE,
                                       extensions = "Buttons",
                                       options = list(dom = "Bfrtip",
-                                                     buttons = "excel"),
+                                                     buttons = "excel"), {
+                                                       dfScenario4()$recommendations
+                                                     }
                                       
-                                      left_join(x = tbl(src = db_con()$con, "popular_products"),
-                                                y = tbl(src = db_con()$con, "product_values"),
-                                                by = "PRODUCT") %>% 
-                                        group_by(BUSINESS_LINE) %>% 
-                                        collect() %>% 
-                                        slice(1:input$recomm_limit) %>% 
-                                        rename(PURCHASES = n) %>% 
-                                        select(-accounts) %>% 
-                                        rename(value = product_value) %>% 
-                                        setNames(str_to_upper(colnames(.)))
+                                      
   )
   
-  #Scenario 5 output
+  ## Scenario 5 ====
   output$accounts_upload <- renderDataTable(server = FALSE,
                                             rownames = FALSE, 
                                             extensions = "Buttons",
@@ -479,7 +497,6 @@ shinyServer(function(input, output, session) {
                                                              dfScenario5()$recommendations_acc
                                                            })
   
-  #Bulk upload output
   output$products_upload <- renderDataTable(server = FALSE,
                                             rownames = FALSE,
                                             extensions = "Buttons",
