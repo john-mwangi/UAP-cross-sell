@@ -123,11 +123,11 @@ copy_to(dest = con_supp,
 supp_path <- "../../../App/uap_cross_sell/db/support.db"
 con_supp <- dbConnect(drv = RSQLite::SQLite(), supp_path)
 
-supp_tayo <- "../../../App/uap_cross_sell/db/support_tayo.db"
-con_tayo <- dbConnect(drv = RSQLite::SQLite(), supp_tayo)
+# supp_tayo <- "../../../App/uap_cross_sell/db/support_tayo.db"
+# con_tayo <- dbConnect(drv = RSQLite::SQLite(), supp_tayo)
 
 dbListTables(con_supp)
-dbListTables(con_tayo)
+# dbListTables(con_tayo)
 ```
 
 
@@ -265,14 +265,30 @@ ug_ownership <- readRDS(file = "../../UG/outputs/ug_recommendations_detailed.rds
 ### Zimbabwe
 
 ```{r}
+zw_sqlite_path <- "../../../App/uap_cross_sell/db/zw_cs.db"
+con_zw <- dbConnect(drv = SQLite(), zw_sqlite_path)
+```
+
+
+```{r}
 zw_ownership <-
   tbl(src = con_zw, "recommendations_detailed") %>% 
   distinct(ownership) %>% 
   collect() %>% 
   pull(ownership)
 
+zw_ownership <- zw_ownership[-7]
 zw_ownership
 ```
+
+
+```{r}
+zw_ownership %>% 
+  mutate(ownership = str_remove_all(string = ownership, pattern = " ")) %>% 
+  mutate(new = map_chr(.x = ownership, ~paste0(str_sort(str_split(string = ., pattern = ",")[[1]]), collapse = ","))) %>% 
+  distinct(new)
+```
+
 
 ## Products
 
@@ -362,18 +378,19 @@ dbWriteTable(con = con_supp, "support", ug_tibble, append=TRUE, row.names = FALS
 ### Zimbabwe
 
 ```{r}
-dbWriteTable(conn = con_supp, 
-             name = "support", 
-             value = zw_tibble, 
-             append=TRUE, 
-             row.names = FALSE)
+support_zw <- support_df %>% rbind(zw_tibble)
 
-tbl(src = con_supp, "support") %>% 
-  filter(country=="Zimbabwe")
-
+copy_to(dest = con_supp,
+        df = support_zw,
+        name = "support",
+        overwrite = TRUE,
+        temporary = FALSE)
 
 tbl(src = con_supp, "support") %>% 
   distinct(country)
+
+tbl(src = con_supp, "support") %>%
+  filter(country=="Zimbabwe")
 ```
 
 
