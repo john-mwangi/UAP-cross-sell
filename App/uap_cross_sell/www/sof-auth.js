@@ -73,7 +73,7 @@ $(document).on("click", "#submit_register", () => {
 
 // password standards
 // let uap_doms = /gmail\.com$|yahoo\.com$/g;
-let uap_doms = /uapoldmutual\.com$|oldmutual\.co\.zw$/g;
+let uap_doms = /uapoldmutual\.com$|oldmutual\.com$|oldmutual\.co\.zw$/g;
 let pass_std = /^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[!@#\$%\^&\*])(?=.{8,})/;
 
   if (password === password_2 && uap_doms.test(email) && pass_std.test(password)) {
