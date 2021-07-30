@@ -38,7 +38,8 @@ function(recomm_limit){
     collect() %>% 
     slice(1:recomm_limit) %>% 
     rename(PURCHASES = n) %>% 
-    select(-accounts)
+    select(-accounts) %>% 
+    rename(new_name = old_name)
   
   return(popular_products)
 }
